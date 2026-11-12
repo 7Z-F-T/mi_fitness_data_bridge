@@ -622,10 +622,6 @@ onBeforeUnmount(() => {
                   </table>
                 </div>
               </section>
-
-              <p class="detail-footnote">
-                {{ t('workout.sampleCount', { count: detail.samples.length }) }}
-              </p>
             </template>
 
             <EmptyState
@@ -750,12 +746,6 @@ onBeforeUnmount(() => {
 .section-head h3 {
   font-size: 0.92rem;
   font-weight: 650;
-}
-
-.detail-footnote {
-  color: var(--text-faint);
-  font-size: 0.74rem;
-  text-align: right;
 }
 
 .drawer-loading {
