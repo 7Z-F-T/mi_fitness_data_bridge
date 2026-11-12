@@ -277,6 +277,17 @@ def main():
     serve_parser = subparsers.add_parser("serve", help="运行 MCP Server")
     serve_parser.add_argument("--db", help=db_help)
 
+    web_parser = subparsers.add_parser(
+        "web", help="运行本地只读 Web API（默认 127.0.0.1:8765）"
+    )
+    web_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="监听地址（默认 127.0.0.1；请勿暴露到公网）",
+    )
+    web_parser.add_argument("--port", type=int, default=8765, help="监听端口（默认 8765）")
+    web_parser.add_argument("--db", help=db_help)
+
     setup_parser = subparsers.add_parser("setup", help="配置服务")
     setup_parser.add_argument("--mode", choices=["mi_fitness_cloud"], help="配置模式")
     setup_parser.add_argument("--region", help="云端区域")
@@ -319,6 +330,14 @@ def main():
     args = parser.parse_args()
     if args.command == "serve" or args.command is None:
         asyncio.run(server_main(db_path=resolve_database_path(getattr(args, "db", None))))
+    elif args.command == "web":
+        from mi_fitness_mcp.web.cli import run_web
+
+        run_web(
+            host=args.host,
+            port=args.port,
+            db_path=resolve_database_path(args.db),
+        )
     elif args.command == "setup":
         cmd_setup(args)
     elif args.command == "doctor":

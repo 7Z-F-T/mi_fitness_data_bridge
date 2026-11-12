@@ -52,7 +52,9 @@
 
 - 医疗诊断、治疗、健康教练或减重建议；
 - 托管账户、共享凭证、公开 Token 代理或多用户云服务；
-- Web 仪表盘、第三方健身 OAuth/Webhook 或餐食照片分析。
+- 托管/多用户 Web 仪表盘、第三方健身 OAuth/Webhook 或餐食照片分析。
+
+可选的本地只读分析页面与 API（`frontend/`、`src/mi_fitness_mcp/web/`）只服务本人本机缓存，不属于上述托管服务。
 
 下游项目应安装本包或消费本地导出结果，而不是复制连接器源码。
 
@@ -235,7 +237,17 @@ pnpm install
 pnpm dev
 ```
 
-前端使用 pnpm 管理依赖（`package.json` 已固定 `packageManager`）。连接真实 SQLite 缓存需要本地只读 API，接口约定和安全边界详见 [frontend/README.md](frontend/README.md)。不要将该页面部署到公网。
+前端使用 pnpm 管理依赖（`package.json` 已固定 `packageManager`）。连接真实 SQLite 缓存时，使用内置的本地只读 API：
+
+```bash
+pip install -e '.[web]'
+mi-fitness-bridge web --host 127.0.0.1 --port 8765
+```
+
+- API 默认只监听 `127.0.0.1`，返回 JSON，只暴露 GET 读接口，并以 SQLite `mode=ro` 打开缓存，不修改数据、不读取凭证。
+- 前端配置 `VITE_API_BASE_URL=http://127.0.0.1:8765/api` 即可切换为真实数据。
+- 接口、标准状态码、统一错误信封和账号选择规则详见 [docs/web-api.md](docs/web-api.md)；前端契约见 [frontend/README.md](frontend/README.md)。
+- 不要将页面或 API 部署到公网。数据库包含明文 `user_id` 和健康数据。
 
 ## 隐私、来源与许可
 

@@ -7,6 +7,7 @@ from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from mi_fitness_mcp.models import (
     AbnormalHeartBeatEvent,
@@ -32,16 +33,24 @@ def _chmod_private(path: Path, mode: int) -> None:
 
 
 class Database:
-    """SQLite database manager."""
+    """SQLite database manager.
 
-    def __init__(self, db_path: Path | str):
+    ``read_only=True`` opens the existing file in SQLite read-only mode and
+    skips schema creation/migrations. It is used by the local web API so that
+    serving requests never mutates the cache.
+    """
+
+    def __init__(self, db_path: Path | str, *, read_only: bool = False):
         """Initialize database.
 
         Args:
             db_path: Path to SQLite database file
+            read_only: Open existing data without creating or migrating schema
         """
         self.db_path = Path(db_path)
-        self._init_db()
+        self.read_only = read_only
+        if not read_only:
+            self._init_db()
 
     def _init_db(self) -> None:
         """Initialize database schema."""
@@ -415,10 +424,22 @@ class Database:
         # The database holds sensitive health data: owner-only on POSIX.
         _chmod_private(self.db_path, 0o600)
 
+    def ping(self) -> None:
+        """Open the database and run a trivial query (health checks)."""
+        with self._get_connection() as conn:
+            conn.execute("SELECT 1").fetchone()
+
     @contextmanager
     def _get_connection(self):
         """Get database connection with row factory."""
-        conn = sqlite3.connect(self.db_path)
+        if self.read_only:
+            path = self.db_path.expanduser().resolve()
+            if not path.is_file():
+                raise FileNotFoundError(f"Mi Fitness database does not exist: {path}")
+            uri = f"file:{quote(path.as_posix(), safe='/:')}?mode=ro"
+            conn = sqlite3.connect(uri, uri=True)
+        else:
+            conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
@@ -676,6 +697,21 @@ class Database:
             rows = conn.execute(
                 """
                 SELECT * FROM workout_detail_samples
+                WHERE user_id = ? AND workout_id = ?
+                ORDER BY offset_seconds
+                """,
+                (user_id, workout_id),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def query_workout_gps_points(
+        self, user_id: str, workout_id: str
+    ) -> list[dict[str, Any]]:
+        """All GPS track points of one workout, ordered by offset."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM workout_gps_points
                 WHERE user_id = ? AND workout_id = ?
                 ORDER BY offset_seconds
                 """,

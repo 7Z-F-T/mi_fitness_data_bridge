@@ -52,7 +52,9 @@ This repository is a data connector and local-data foundation. It deliberately d
 
 - Medical diagnosis, treatment, coaching, or weight-loss advice.
 - Hosted accounts, shared credentials, public token proxies, or multi-user cloud services.
-- A web dashboard, third-party fitness OAuth/webhooks, or meal-photo analysis.
+- A hosted or multi-user web dashboard, third-party fitness OAuth/webhooks, or meal-photo analysis.
+
+The optional local-only, read-only dashboard/API (`frontend/` and `src/mi_fitness_mcp/web/`) serves the user's own local cache and is not a hosted service.
 
 Downstream projects should install this package or consume its local exports instead of copying the connector source.
 
@@ -224,6 +226,19 @@ python -m ruff check src tests
 ```
 
 Use synthetic data only in issues, tests, documentation, and screenshots. Follow [SECURITY.md](SECURITY.md) for security reporting; see [docs/release-checklist.md](docs/release-checklist.md) for release steps.
+
+## Local web dashboard and API (optional)
+
+`frontend/` is a separate Vue 3 + TypeScript dashboard (pnpm-managed) with home, workout summary, and goals pages. It uses synthetic demo data by default.
+
+The bridge also ships a local read-only FastAPI service for the dashboard:
+
+```bash
+pip install -e '.[web]'
+mi-fitness-bridge web --host 127.0.0.1 --port 8765
+```
+
+It binds to `127.0.0.1` by default, returns JSON-only GET responses, opens SQLite in read-only mode, and never reads credentials. Point the frontend at it with `VITE_API_BASE_URL=http://127.0.0.1:8765/api`. See [docs/web-api.md](docs/web-api.md) and [frontend/README.md](frontend/README.md). Never deploy the dashboard or API publicly: the cache contains plaintext `user_id` and sensitive health records.
 
 ## Privacy, provenance, and license
 

@@ -1,5 +1,36 @@
 import type { FitnessApi } from './types'
 
+interface ApiErrorBody {
+  error?: {
+    code?: string
+    message?: string
+    requestId?: string
+    details?: unknown
+  }
+}
+
+export class ApiRequestError extends Error {
+  readonly status: number
+  readonly code?: string
+  readonly requestId?: string
+  readonly details?: unknown
+
+  constructor(
+    status: number,
+    message: string,
+    code?: string,
+    requestId?: string,
+    details?: unknown,
+  ) {
+    super(message)
+    this.name = 'ApiRequestError'
+    this.status = status
+    this.code = code
+    this.requestId = requestId
+    this.details = details
+  }
+}
+
 export function createHttpApi(baseUrl: string): FitnessApi {
   const base = baseUrl.replace(/\/+$/, '')
 
@@ -8,7 +39,19 @@ export function createHttpApi(baseUrl: string): FitnessApi {
       headers: { Accept: 'application/json' },
     })
     if (!response.ok) {
-      throw new Error(`API request failed with ${response.status}`)
+      let body: ApiErrorBody | null = null
+      try {
+        body = (await response.json()) as ApiErrorBody
+      } catch {
+        // Non-JSON error responses fall back to the status text below.
+      }
+      throw new ApiRequestError(
+        response.status,
+        body?.error?.message ?? `请求失败（HTTP ${response.status}）`,
+        body?.error?.code,
+        body?.error?.requestId,
+        body?.error?.details,
+      )
     }
     return (await response.json()) as T
   }

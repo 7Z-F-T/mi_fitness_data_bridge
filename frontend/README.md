@@ -46,21 +46,35 @@ The app defaults to **synthetic demo data** from `src/api/mock.ts`; the header
 shows a `演示数据 / Demo data` badge. All demo values are generated, contain no
 real health records, and are intentionally labeled.
 
-To connect the real local cache, run a **local read-only HTTP API** and set:
+To connect the real local cache, start the bridge's local read-only API:
 
 ```bash
-# frontend/.env.local (gitignored by *.local)
-VITE_API_BASE_URL=http://127.0.0.1:8000/api
+# from the repository root
+pip install -e '.[web]'
+mi-fitness-bridge web --host 127.0.0.1 --port 8765
 ```
 
-A browser cannot open the SQLite file directly, so a small local API is the
-simplest bridge. It must open the database read-only, bind to `127.0.0.1`, and
-never expose credentials. Suggested implementation: the existing Python package
-+ a local FastAPI/Flask route that queries the tables listed below.
+Then set:
+
+```bash
+# frontend/.env.local (gitignored by *.local); see .env.example
+VITE_API_BASE_URL=http://127.0.0.1:8765/api
+```
+
+> Vite reads environment files at startup. Restart `pnpm dev` after creating or
+> changing `.env.local`, otherwise the app keeps using the synthetic demo data.
+
+A browser cannot open the SQLite file directly, so the Python bridge exposes a
+read-only FastAPI service. It opens SQLite with `mode=ro`, binds to `127.0.0.1`
+by default, returns JSON-only GET responses, and never reads credentials.
+See [`../docs/web-api.md`](../docs/web-api.md) for status codes, error envelopes,
+account selection, and security notes.
 
 ### API contract
 
-Response shapes are defined in `src/api/types.ts`.
+Paths below are relative to `VITE_API_BASE_URL` (for example
+`http://127.0.0.1:8765/api`). Response shapes are defined in
+`src/api/types.ts` and serialized as camelCase JSON.
 
 | Method + path | Returns |
 | --- | --- |

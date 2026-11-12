@@ -422,43 +422,51 @@ class QueryService:
                 if distance_km < min_distance_km:
                     continue
 
-            workouts.append(
-                {
-                    "workout_id": record["workout_id"],
-                    "activity_type": record["activity_type"],
-                    "start_at": record["start_at"],
-                    "end_at": record["end_at"],
-                    "duration_minutes": record["duration_minutes"],
-                    "distance_m": record.get("distance_m"),
-                    "calories_kcal": record.get("calories_kcal"),
-                    "avg_heart_rate_bpm": record.get("avg_heart_rate_bpm"),
-                    "max_heart_rate_bpm": record.get("max_heart_rate_bpm"),
-                    "avg_pace_sec_per_km": record.get("avg_pace_sec_per_km"),
-                    "max_pace_sec_per_km": record.get("max_pace_sec_per_km"),
-                    "total_steps": record.get("total_steps"),
-                    "min_heart_rate_bpm": record.get("min_heart_rate_bpm"),
-                    "valid_duration_seconds": record.get("valid_duration_seconds"),
-                    "avg_cadence": record.get("avg_cadence"),
-                    "max_cadence": record.get("max_cadence"),
-                    "avg_stride": record.get("avg_stride"),
-                    "avg_speed_mps": record.get("avg_speed_mps"),
-                    "min_pace_sec_per_km": record.get("min_pace_sec_per_km"),
-                    "avg_height_m": record.get("avg_height_m"),
-                    "max_height_m": record.get("max_height_m"),
-                    "min_height_m": record.get("min_height_m"),
-                    "rise_height_m": record.get("rise_height_m"),
-                    "fall_height_m": record.get("fall_height_m"),
-                    "total_climbing_m": record.get("total_climbing_m"),
-                    "vo2max": record.get("vo2max"),
-                    "train_effect": record.get("train_effect"),
-                    "anaerobic_train_effect": record.get("anaerobic_train_effect"),
-                    "training_load": record.get("training_load"),
-                    "recovery_time": record.get("recovery_time"),
-                    "avg_spo2_pct": record.get("avg_spo2_pct"),
-                }
-            )
+            workouts.append(self._workout_payload(record))
 
         return workouts
+
+    @staticmethod
+    def _workout_payload(record: dict[str, Any]) -> dict[str, Any]:
+        """Map one workouts-table row to the public camel-ready payload."""
+        return {
+            "workout_id": record["workout_id"],
+            "activity_type": record["activity_type"],
+            "start_at": record["start_at"],
+            "end_at": record["end_at"],
+            "duration_minutes": record["duration_minutes"],
+            "distance_m": record.get("distance_m"),
+            "calories_kcal": record.get("calories_kcal"),
+            "avg_heart_rate_bpm": record.get("avg_heart_rate_bpm"),
+            "max_heart_rate_bpm": record.get("max_heart_rate_bpm"),
+            "avg_pace_sec_per_km": record.get("avg_pace_sec_per_km"),
+            "max_pace_sec_per_km": record.get("max_pace_sec_per_km"),
+            "total_steps": record.get("total_steps"),
+            "min_heart_rate_bpm": record.get("min_heart_rate_bpm"),
+            "valid_duration_seconds": record.get("valid_duration_seconds"),
+            "avg_cadence": record.get("avg_cadence"),
+            "max_cadence": record.get("max_cadence"),
+            "avg_stride": record.get("avg_stride"),
+            "avg_speed_mps": record.get("avg_speed_mps"),
+            "min_pace_sec_per_km": record.get("min_pace_sec_per_km"),
+            "avg_height_m": record.get("avg_height_m"),
+            "max_height_m": record.get("max_height_m"),
+            "min_height_m": record.get("min_height_m"),
+            "rise_height_m": record.get("rise_height_m"),
+            "fall_height_m": record.get("fall_height_m"),
+            "total_climbing_m": record.get("total_climbing_m"),
+            "vo2max": record.get("vo2max"),
+            "train_effect": record.get("train_effect"),
+            "anaerobic_train_effect": record.get("anaerobic_train_effect"),
+            "training_load": record.get("training_load"),
+            "recovery_time": record.get("recovery_time"),
+            "avg_spo2_pct": record.get("avg_spo2_pct"),
+        }
+
+    def get_workout(self, workout_id: str) -> dict[str, Any] | None:
+        """Return one mapped workout by provider workout ID, or None."""
+        record = self.db.get_workout(self.user_id, workout_id)
+        return self._workout_payload(record) if record else None
 
     def get_workout_series(
         self,

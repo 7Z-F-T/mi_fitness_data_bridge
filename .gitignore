@@ -1,6 +1,7 @@
 # Credentials and private runtime data
 .env
 .env.*
+!frontend/.env.example
 *.db
 *.sqlite
 *.sqlite3
