@@ -216,6 +216,7 @@ TYPE_INTEGER_KM = 6
 TYPE_DISTANCE = 9
 TYPE_HEIGHT_VALUE = 87
 TYPE_CADENCE = 49
+TYPE_CYCLE_CADENCE = 50
 TYPE_SPEED = 51
 TYPE_RUNNING_POWER = 57
 
@@ -235,10 +236,10 @@ OUTDOOR_CONFIG = _RecordConfig(
     ],
 )
 
-# 户外计步类（proto 22，含 23 共用结构）：本机户外跑步上报为 22。
-# 通道表与 dataValid 长度来自上游 OutdoorStepRecordParser / OutdoorNoStepRecordParser。
+# 户外计步类（proto 22）：本机户外跑步上报为 22。
+# 通道表与 dataValid 长度来自上游 OutdoorStepRecordParser。
 STEP_CONFIG = _RecordConfig(
-    proto_types=frozenset({22, 23}),
+    proto_types=frozenset({22}),
     it_summary_types=(
         OneDimenType(41, 1, 1),
         OneDimenType(43, 4, 3),
@@ -247,12 +248,18 @@ STEP_CONFIG = _RecordConfig(
         OneDimenType(55, 2, 6),
     ),
     pause_init_types=(OneDimenType(0, 4, 1),),
+    # v9 adds the altitude channel, leaving 14 active channels and 7 dataValid
+    # bytes. The upstream reference also declares a 2-byte integer_km from v9,
+    # but real v9 outdoor-running blobs keep the 1-byte integer_km: 1805
+    # records consumed exactly 45125 body bytes (25 bytes each). Counting the
+    # 2-byte declaration makes each record 26 bytes and rejects the sample
+    # count. Nibble order follows this list, so the 2-byte declaration is not
+    # included here.
     data_valid_len={1: 2, 2: 3, 3: 3, 4: 3, 5: 5, 6: 6, 7: 6, 8: 7, 9: 7},
     four_dimen_types=[
         FourDimenType(TYPE_CALORIES, 1, 1, high_start_bit=4, high_bit_count=4),
         FourDimenType(TYPE_HR, 1, 1),
         FourDimenType(TYPE_HEIGHT_VALUE, 4, 9),
-        FourDimenType(TYPE_INTEGER_KM, 2, 9, high_start_bit=15, high_bit_count=1),
         FourDimenType(TYPE_INTEGER_KM, 1, 1, high_start_bit=7, high_bit_count=1),
         FourDimenType(TYPE_DISTANCE, 1, 1),
         FourDimenType(40, 1, 2),  # 步幅
@@ -264,6 +271,32 @@ STEP_CONFIG = _RecordConfig(
         FourDimenType(TYPE_RUNNING_POWER, 2, 6),
         FourDimenType(79, 2, 8),
         FourDimenType(80, 2, 8),
+    ],
+)
+
+# 户外无计步类（proto 23，户外骑行等）：上游 _OUTDOOR_NO_STEP_CONFIG。
+# v6/v7 有 8 个活跃通道（海拔与 2B integer_km 加入，1B integer_km 仍声明），
+# 需要 4 字节 dataValid；IT 摘要为 41/43/78/58，共 11 字节。真实 v7 骑行
+# blob 只有按 4 字节 validity、11 字节 IT 才能与记录数正确对齐。
+NO_STEP_CONFIG = _RecordConfig(
+    proto_types=frozenset({23}),
+    it_summary_types=(
+        OneDimenType(41, 1, 1),
+        OneDimenType(43, 4, 2),
+        OneDimenType(78, 4, 5),
+        OneDimenType(58, 2, 4),
+    ),
+    pause_init_types=(OneDimenType(0, 4, 1),),
+    data_valid_len={1: 2, 2: 2, 3: 3, 4: 3, 5: 3, 6: 4, 7: 4},
+    four_dimen_types=[
+        FourDimenType(TYPE_CALORIES, 1, 1, high_start_bit=4, high_bit_count=4),
+        FourDimenType(TYPE_HR, 1, 1),
+        FourDimenType(TYPE_HEIGHT_VALUE, 4, 6),
+        FourDimenType(TYPE_INTEGER_KM, 2, 6, high_start_bit=15, high_bit_count=1),
+        FourDimenType(TYPE_INTEGER_KM, 1, 1, high_start_bit=7, high_bit_count=1),
+        FourDimenType(TYPE_DISTANCE, 1, 1),
+        FourDimenType(TYPE_SPEED, 2, 3),
+        FourDimenType(TYPE_CYCLE_CADENCE, 1, 3),
     ],
 )
 
@@ -316,7 +349,13 @@ FREE_TRAINING_CONFIG = _RecordConfig(
     ],
 )
 
-_RECORD_CONFIGS = (OUTDOOR_CONFIG, STEP_CONFIG, INDOOR_RUN_CONFIG, FREE_TRAINING_CONFIG)
+_RECORD_CONFIGS = (
+    OUTDOOR_CONFIG,
+    STEP_CONFIG,
+    NO_STEP_CONFIG,
+    INDOOR_RUN_CONFIG,
+    FREE_TRAINING_CONFIG,
+)
 
 # 通道表按位置解析；valid_map 以 type_id 为键，重复通道（INTEGER_KM 新旧
 # 两种宽度并存）沿用上游语义：后出现的覆盖前者的有效性位。
@@ -380,7 +419,12 @@ def _parse_record_body(
         if record_count and (
             not record_bytes or record_count > (len(buf) - offset) // record_bytes
         ):
-            raise FdsParseError("FDS sample count exceeds available record bytes")
+            raise FdsParseError(
+                "FDS sample count exceeds available record bytes "
+                f"(count={record_count}, record_bytes={record_bytes}, "
+                f"available={len(buf) - offset}, version={version}, "
+                f"data_valid_len={len(header.data_valid)})"
+            )
         records: list[dict[int, int]] = []
         for _ in range(record_count):
             record: dict[int, int] = {}

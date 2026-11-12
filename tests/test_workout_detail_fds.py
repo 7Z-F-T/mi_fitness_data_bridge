@@ -21,11 +21,13 @@ from mi_fitness_mcp.adapters.fds import (
     FDS_HEADER_META_LEN,
     TYPE_CADENCE,
     TYPE_CALORIES,
+    TYPE_CYCLE_CADENCE,
     TYPE_DISTANCE,
     TYPE_HEIGHT_VALUE,
     TYPE_HR,
     TYPE_INTEGER_KM,
     TYPE_PACE,
+    TYPE_SPEED,
     FdsParseError,
     build_fds_suffix,
     decrypt_fds_blob,
@@ -488,17 +490,170 @@ def test_sport_record_proto22_step_config_roundtrip():
     assert TYPE_HEIGHT_VALUE not in samples[0]
 
 
-def test_sport_record_proto22_v9_data_valid_length():
-    """v9 引入海拔与 2B integer_km 通道；dataValid 长度 7 字节。
+def test_sport_record_proto22_v9_data_valid_roundtrip():
+    """v9 保留 1B integer_km：14 个活跃通道 -> 7 字节 dataValid、25 字节/样本。
 
-    通道表 15 个位置需要 8 字节 validity，上游表只给 7 —— 与参考实现
-    行为一致：当前会抛 FdsParseError 并由调用方记录后跳过。此测试固定
-    该行为，真实设备 v9 blob 如可用再调整表值。
+    回归：真实 v9 blob 的诊断为 count=1805、record_bytes=26、available=45125，
+    而 1805 × 25 = 45125 —— body 对齐正确，只是记录应为 25 字节。上游参考表
+    额外声明了一个 v9 起的 2B integer_km，但真实 v9 blob 仍使用 1B 通道。
     """
     version = 9
-    blob = struct.pack("<IBBB", 1789998701, 32, version, 22) + b"\x00" + bytes(7)
-    with pytest.raises(FdsParseError):
-        parse_sport_record(blob, 22)
+    proto_type = 22
+    report_time = 1789998701
+    # 14 个活跃 nibble 全部 exist+high -> 7 字节。
+    data_valid = bytes((0xCC,)) * 7
+    header = struct.pack("<IBBB", report_time, 32, version, proto_type) + b"\x00" + data_valid
+
+    def record(cadence: int, pace: int) -> bytes:
+        # 顺序与 STEP_CONFIG 中 v9 活跃通道一致，共 25 字节。
+        return b"".join(
+            (
+                bytes(((5 << 4) | 3,)),  # calories v1（高 4 位为整数部分）
+                bytes((150,)),  # heart rate v1
+                struct.pack("<I", 1234),  # height v9
+                bytes((0x80 | 1,)),  # integer_km v1, 1B（v9 仍使用 1B 通道）
+                bytes((200,)),  # distance v1
+                bytes((105,)),  # stride v2
+                struct.pack("<I", (42 << 26) | 0x3FF),  # landing impact v4
+                bytes((80,)),  # touchdown/air ratio v5
+                bytes((cadence,)),  # cadence v5
+                struct.pack("<H", pace),  # pace v5
+                struct.pack("<H", 111),  # channel 56 v6
+                struct.pack("<H", 222),  # running power v6
+                struct.pack("<H", 333),  # channel 79 v8
+                struct.pack("<H", 444),  # channel 80 v8
+            )
+        )
+
+    assert len(record(168, 570)) == 25
+    body = b"\x00" * 4  # pause_init
+    body += struct.pack("<I", 2)  # record_count
+    body += struct.pack("<I", report_time)  # segment start
+    body += b"\x00" * 15  # IT 摘要：41(1B) 43(4B) 78(4B) 54(4B) 55(2B)
+    body += record(168, 570) + record(172, 575)
+
+    segments = parse_sport_record(header + body, proto_type)
+    assert len(segments) == 1
+    seg_start, samples = segments[0]
+    assert seg_start == report_time
+    assert len(samples) == 2
+    assert samples[0][TYPE_HR] == 150
+    assert samples[0][TYPE_HEIGHT_VALUE] == 1234
+    assert samples[0][TYPE_INTEGER_KM] == 1
+    assert samples[0][TYPE_CADENCE] == 168
+    assert samples[0][TYPE_PACE] == 570
+    assert samples[0][79] == 333
+    assert samples[0][80] == 444
+    assert samples[1][TYPE_CADENCE] == 172
+    assert samples[1][TYPE_PACE] == 575
+
+
+def test_four_dimen_data_valid_lengths_match_active_channels():
+    """每个版本的长度必须等于活跃四维通道数的一半（向上取整）。
+
+    v9 有 14 个活跃通道（海拔加入，仍使用 1B integer_km）-> 7 个 validity 字节。
+    """
+    from mi_fitness_mcp.adapters.fds import _RECORD_CONFIGS
+
+    for config in _RECORD_CONFIGS:
+        for version, length in config.data_valid_len.items():
+            active = sum(
+                1 for data_type in config.four_dimen_types if data_type.support_version <= version
+            )
+            assert length == (active + 1) // 2, (config.proto_types, version, active, length)
+
+
+def test_sport_record_proto22_v8_still_uses_seven_data_valid_bytes():
+    """v8 只有 13 个活跃通道，7 字节 dataValid 仍应正常解析。"""
+    version = 8
+    proto_type = 22
+    report_time = 1789998701
+    data_valid = bytes((0xCC,)) * 7
+    header = struct.pack("<IBBB", report_time, 32, version, proto_type) + b"\x00" + data_valid
+
+    record = b"".join(
+        (
+            bytes(((5 << 4) | 3,)),  # calories v1
+            bytes((150,)),  # heart rate v1
+            bytes((0x80 | 1,)),  # integer_km v1（v9 的 2B 通道未启用）
+            bytes((200,)),  # distance v1
+            bytes((105,)),  # stride v2
+            struct.pack("<I", (42 << 26) | 0x3FF),  # landing impact v4
+            bytes((80,)),  # touchdown/air ratio v5
+            bytes((168,)),  # cadence v5
+            struct.pack("<H", 570),  # pace v5
+            struct.pack("<H", 111),  # channel 56 v6
+            struct.pack("<H", 222),  # running power v6
+            struct.pack("<H", 333),  # channel 79 v8
+            struct.pack("<H", 444),  # channel 80 v8
+        )
+    )
+    body = b"\x00" * 4  # pause_init
+    body += struct.pack("<I", 1)  # record_count
+    body += struct.pack("<I", report_time)  # segment start
+    body += b"\x00" * 15  # IT 摘要
+    body += record
+
+    segments = parse_sport_record(header + body, proto_type)
+    assert len(segments) == 1
+    _seg_start, samples = segments[0]
+    assert len(samples) == 1
+    assert samples[0][TYPE_HR] == 150
+    assert TYPE_HEIGHT_VALUE not in samples[0]
+    assert samples[0][TYPE_CADENCE] == 168
+    assert samples[0][79] == 333
+    assert samples[0][80] == 444
+
+
+def test_sport_record_proto23_v7_no_step_roundtrip():
+    """户外骑行（proto 23，no-step）：v7 使用 4 字节 dataValid、11 字节 IT。
+
+    回归：此前把 proto 23 当作 proto 22 的计步族解析（6 字节 validity、
+    15 字节 IT），body 偏移 2 字节，record_count 被读成
+    0xE4910000 这类值（时间戳低 16 位移到高 16 位）。
+    """
+    version = 7
+    proto_type = 23
+    report_time = 1790502033
+    # 8 个活跃 nibble 全部 exist+high -> 4 字节。
+    data_valid = bytes((0xCC,)) * 4
+    header = struct.pack("<IBBB", report_time, 32, version, proto_type) + b"\x00" + data_valid
+
+    def record(speed: int, cadence: int) -> bytes:
+        # 顺序与 NO_STEP_CONFIG 一致，共 13 字节。
+        return b"".join(
+            (
+                bytes(((5 << 4) | 3,)),  # calories v1
+                bytes((140,)),  # heart rate v1
+                struct.pack("<I", 500),  # height v6
+                struct.pack("<H", 0x8001),  # integer_km 2B v6
+                bytes((0x80 | 1,)),  # integer_km 1B v1（覆盖同 type_id）
+                bytes((200,)),  # distance v1
+                struct.pack("<H", speed),  # speed v3
+                bytes((cadence,)),  # cycle cadence v3
+            )
+        )
+
+    assert len(record(150, 90)) == 13
+    body = b"\x00" * 4  # pause_init
+    body += struct.pack("<I", 2)  # record_count
+    body += struct.pack("<I", report_time)  # segment start
+    body += b"\x00" * 11  # IT 摘要：41(1B) 43(4B) 78(4B) 58(2B)
+    body += record(150, 90) + record(160, 95)
+
+    segments = parse_sport_record(header + body, proto_type)
+    assert len(segments) == 1
+    seg_start, samples = segments[0]
+    assert seg_start == report_time
+    assert len(samples) == 2
+    assert samples[0][TYPE_HR] == 140
+    assert samples[0][TYPE_HEIGHT_VALUE] == 500
+    assert samples[0][TYPE_INTEGER_KM] == 1
+    assert samples[0][TYPE_SPEED] == 150
+    assert samples[0][TYPE_CYCLE_CADENCE] == 90
+    assert TYPE_CADENCE not in samples[0]  # step cadence is not part of this family
+    assert samples[1][TYPE_SPEED] == 160
+    assert samples[1][TYPE_CYCLE_CADENCE] == 95
 
 
 def test_detail_samples_table_migration_adds_proto22_columns(tmp_path):
