@@ -7,18 +7,26 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query
 
-from mi_fitness_mcp.web.dependencies import get_service
+from mi_fitness_mcp.web.dependencies import (
+    get_service,
+    get_sync_coordinator,
+    require_sync_confirmation,
+)
 from mi_fitness_mcp.web.schemas import (
     ApiErrorResponse,
     Goal,
     HealthResponse,
     HomeSummary,
     SummaryRange,
+    SyncRequest,
+    SyncStartResponse,
+    SyncStatus,
     Workout,
     WorkoutDetail,
     WorkoutSummary,
 )
 from mi_fitness_mcp.web.service import FitnessService
+from mi_fitness_mcp.web.sync import SyncCoordinator
 
 COMMON_RESPONSES = {
     404: {
@@ -27,7 +35,7 @@ COMMON_RESPONSES = {
     },
     405: {
         "model": ApiErrorResponse,
-        "description": "请求方法不允许；读接口只接受 GET",
+        "description": "该接口不支持此请求方法",
     },
     409: {
         "model": ApiErrorResponse,
@@ -48,6 +56,8 @@ COMMON_RESPONSES = {
 }
 
 ServiceDep = Annotated[FitnessService, Depends(get_service)]
+SyncCoordinatorDep = Annotated[SyncCoordinator, Depends(get_sync_coordinator)]
+SyncConfirmationDep = Annotated[None, Depends(require_sync_confirmation)]
 
 router = APIRouter()
 
@@ -167,3 +177,51 @@ def workout_detail(
 )
 def goals(service: ServiceDep) -> list[Goal]:
     return service.goals()
+
+
+@router.get(
+    "/sync/status",
+    response_model=SyncStatus,
+    summary="同步状态",
+    description=(
+        "返回每种数据类型的最近一次同步时间、状态、计数和错误码。"
+        "数据库不存在或尚未同步时，各类型返回 never/unknown，不会报 503。"
+    ),
+    tags=["sync"],
+    responses=COMMON_RESPONSES,
+)
+def sync_status(coordinator: SyncCoordinatorDep) -> SyncStatus:
+    return coordinator.status()
+
+
+@router.post(
+    "/sync",
+    response_model=SyncStartResponse,
+    status_code=202,
+    summary="启动本地同步",
+    description=(
+        "使用本机钥匙串中已配置的小米凭证，按上次同步水位执行增量同步；"
+        "full=true 时忽略水位但仍受日期范围限制。请求必须带 "
+        "`X-Mi-Fitness-Confirm: sync`，不会在 HTTP 中接收任何凭证。"
+    ),
+    tags=["sync"],
+    responses={
+        **COMMON_RESPONSES,
+        202: {"model": SyncStartResponse, "description": "同步任务已接受"},
+        403: {
+            "model": ApiErrorResponse,
+            "description": "缺少 X-Mi-Fitness-Confirm: sync 请求头",
+        },
+        409: {
+            "model": ApiErrorResponse,
+            "description": "已有同步进行中，或本机尚未配置小米凭证",
+        },
+    },
+)
+async def start_sync(
+    payload: SyncRequest,
+    coordinator: SyncCoordinatorDep,
+    _confirmed: SyncConfirmationDep,
+) -> SyncStartResponse:
+    sync_id = await coordinator.start(payload.data_types, full=payload.full)
+    return SyncStartResponse(sync_id=sync_id)

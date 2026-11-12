@@ -1,4 +1,4 @@
-import type { FitnessApi } from './types'
+import type { FitnessApi, SyncStartResponse, SyncStatus } from './types'
 
 interface ApiErrorBody {
   error?: {
@@ -34,10 +34,13 @@ export class ApiRequestError extends Error {
 export function createHttpApi(baseUrl: string): FitnessApi {
   const base = baseUrl.replace(/\/+$/, '')
 
-  async function request<T>(path: string): Promise<T> {
-    const response = await fetch(`${base}${path}`, {
-      headers: { Accept: 'application/json' },
-    })
+  async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    const headers = new Headers(init?.headers)
+    headers.set('Accept', 'application/json')
+    if (init?.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json')
+    }
+    const response = await fetch(`${base}${path}`, { ...init, headers })
     if (!response.ok) {
       let body: ApiErrorBody | null = null
       try {
@@ -78,6 +81,21 @@ export function createHttpApi(baseUrl: string): FitnessApi {
 
     getGoals() {
       return request('/goals')
+    },
+
+    getSyncStatus() {
+      return request<SyncStatus>('/sync/status')
+    },
+
+    startSync(options = {}) {
+      return request<SyncStartResponse>('/sync', {
+        method: 'POST',
+        headers: { 'X-Mi-Fitness-Confirm': 'sync' },
+        body: JSON.stringify({
+          dataTypes: options.dataTypes,
+          full: options.full ?? false,
+        }),
+      })
     },
   }
 }

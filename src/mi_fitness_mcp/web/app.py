@@ -29,6 +29,7 @@ from mi_fitness_mcp.config import load_config, resolve_database_path
 from mi_fitness_mcp.web.exceptions import ApiError, DatabaseLockedError
 from mi_fitness_mcp.web.routes import router
 from mi_fitness_mcp.web.service import FitnessService
+from mi_fitness_mcp.web.sync import SyncCoordinator
 
 logger = logging.getLogger(__name__)
 
@@ -87,32 +88,51 @@ def create_app(db_path: Path | str | None = None) -> FastAPI:
         else (resolve_database_path(None) or load_config().database_path)
     )
 
+    fitness_service = FitnessService(resolved_path)
+    sync_coordinator = SyncCoordinator(
+        resolved_path, on_complete=fitness_service.invalidate
+    )
+
+    async def lifespan(_: FastAPI):
+        yield
+        await sync_coordinator.shutdown()
+
     app = FastAPI(
         title="Mi Fitness Data API",
         version=__version__,
         description=(
-            "Local-only, read-only HTTP API over the SQLite cache created by "
-            "mi-fitness-data-bridge. It never accepts credentials and never "
-            "writes to the cache. Bind it to 127.0.0.1 only."
+            "Local-only HTTP API over the SQLite cache created by "
+            "mi-fitness-data-bridge. Query endpoints are read-only; the explicit "
+            "local sync action writes the cache using credentials already stored "
+            "in the OS keyring. The API never accepts credentials. Bind it to "
+            "127.0.0.1 only."
         ),
         docs_url="/docs",
         redoc_url=None,
         openapi_url="/openapi.json",
+        lifespan=lifespan,
         openapi_tags=[
             {"name": "dashboard", "description": "首页聚合数据"},
             {"name": "workouts", "description": "运动列表、汇总与明细"},
+            {"name": "sync", "description": "本地同步入口与分类同步状态"},
             {"name": "goals", "description": "运动目标（规划中）"},
             {"name": "system", "description": "健康检查"},
         ],
     )
-    app.state.service = FitnessService(resolved_path)
+    app.state.service = fitness_service
+    app.state.sync = sync_coordinator
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Accept", "Content-Type", "X-Request-ID"],
+        allow_headers=[
+            "Accept",
+            "Content-Type",
+            "X-Request-ID",
+            "X-Mi-Fitness-Confirm",
+        ],
         expose_headers=["X-Request-ID"],
     )
     app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -181,7 +201,7 @@ def create_app(db_path: Path | str | None = None) -> FastAPI:
             )
         if exc.status_code == 405:
             return _error_response(
-                request, 405, "METHOD_NOT_ALLOWED", "该接口只接受 GET 请求。"
+                request, 405, "METHOD_NOT_ALLOWED", "该接口不支持此请求方法。"
             )
         return _error_response(
             request,

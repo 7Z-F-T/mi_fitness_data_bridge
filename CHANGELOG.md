@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Add a local, read-only FastAPI service (`mi-fitness-bridge web`) for the dashboard: `GET /api/home`, `/api/workouts`, `/api/workouts/{id}`, `/api/workouts/summary`, `/api/goals`, and `/api/health`. Typed Pydantic camelCase responses, domain exceptions in `web/exceptions.py`, a consistent JSON error envelope with request IDs, standard HTTP status codes (404/405/409/422/500/503), localhost CORS, `no-store` security headers, and SQLite read-only access via `Database(read_only=True)`. Add a GPS query method and synthetic web API tests.
+- Add per-dataset sync history and a local sync entry point:
+  - New additive `sync_runs` table records each data type's start/finish time, status (`running`/`ok`/`partial`/`error`/`cancelled`), added/updated/skipped counts, source (`cli`/`mcp`/`web`), incremental flag, requested dates and error code. Raw exception text and health values are never stored.
+  - `SyncService` records every CLI/MCP/web type run; the existing `sync_state` watermark remains the incremental cursor.
+  - CLI `sync` keeps the default incremental behavior when dates are omitted, now prints the effective range and supports `--full` to ignore the watermark (still bounded by the range/lookback).
+  - Web API: `POST /api/sync` starts a background sync using keyring credentials and requires `X-Mi-Fitness-Confirm: sync`; `GET /api/sync/status` returns per-type status and is used by the frontend Sync panel. Query endpoints remain read-only.
+  - Frontend: header Sync entry with per-type last sync time/status, incremental by default and an optional full-sync checkbox.
+  - Synthetic tests cover storage, API status/validation/confirmation and a fake coordinator; no real Xiaomi sync is triggered in tests.
+
+- Add a local FastAPI service (`mi-fitness-bridge web`) for the dashboard: `GET /api/home`, `/api/workouts`, `/api/workouts/{id}`, `/api/workouts/summary`, `/api/goals`, and `/api/health`. Query endpoints are read-only; the explicit sync action was added in the sync-history entry below. Typed Pydantic camelCase responses, domain exceptions in `web/exceptions.py`, a consistent JSON error envelope with request IDs, standard HTTP status codes (404/405/409/422/500/503), localhost CORS, `no-store` security headers, and SQLite read-only access via `Database(read_only=True)`. Add a GPS query method and synthetic web API tests.
 
 - Fix FDS parsing for outdoor step record version 9 (`proto_type` 22): v9 adds the altitude channel but keeps the 1-byte `integer_km`, leaving 14 active four-dimensional channels and 7 `dataValid` bytes (25 bytes per record). The upstream reference also lists a 2-byte `integer_km` from v9; including it either exhausted the validity bytes (`dataValid too short: need byte 7`) or made the parser expect 26-byte records (`sample count exceeds available record bytes`) and reject real v9 outdoor-running blobs. The structural parse error now reports count, record size, available bytes, version and `dataValid` length. Failed workouts are not cached and are retried by the next sync. Synthetic v8/v9 round-trip tests cover both sides of the version boundary.
 

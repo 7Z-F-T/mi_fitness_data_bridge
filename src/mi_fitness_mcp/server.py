@@ -1392,6 +1392,8 @@ async def _run_sync_data(arguments: dict, sync_id: str | None = None) -> dict:
                     start_date=arguments.get("start_date"),
                     end_date=arguments.get("end_date"),
                     force_full=arguments.get("force_full_sync", False),
+                    sync_id=sync_id,
+                    source="mcp",
                 ),
                 timeout=config.sync_type_timeout_seconds,
             )

@@ -6,17 +6,20 @@ import {
   Activity,
   Languages,
   MoonStar,
+  RefreshCw,
   Sun,
   UserRound,
 } from '@lucide/vue'
 import { useAppStore } from '../stores/app'
 import { isMockApi } from '../api'
 import CredentialModal from './CredentialModal.vue'
+import SyncModal from './SyncModal.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
 const route = useRoute()
 const accountOpen = ref(false)
+const syncOpen = ref(false)
 
 const navItems = [
   { name: 'home', to: '/', labelKey: 'nav.home' },
@@ -78,6 +81,17 @@ function toggleLocale() {
 
         <button
           type="button"
+          class="btn sync-btn"
+          :title="t('nav.sync')"
+          :aria-label="t('nav.sync')"
+          @click="syncOpen = true"
+        >
+          <RefreshCw :size="16" />
+          <span class="sync-label">{{ t('nav.sync') }}</span>
+        </button>
+
+        <button
+          type="button"
           class="btn account-btn"
           :title="t('nav.account')"
           @click="accountOpen = true"
@@ -89,6 +103,7 @@ function toggleLocale() {
     </div>
   </header>
 
+  <SyncModal :open="syncOpen" @close="syncOpen = false" />
   <CredentialModal :open="accountOpen" @close="accountOpen = false" />
 </template>
 
@@ -195,9 +210,26 @@ function toggleLocale() {
 }
 
 .lang-btn,
-.account-btn {
+.account-btn,
+.sync-btn {
   min-height: 38px;
   padding-inline: 12px;
+}
+
+.sync-btn {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.sync-btn:hover {
+  border-color: transparent;
+  background: var(--accent);
+  color: #ffffff;
+}
+
+:root[data-theme='dark'] .sync-btn {
+  color: var(--accent);
 }
 
 .account-btn {
@@ -232,8 +264,14 @@ function toggleLocale() {
   }
 
   .demo-badge,
-  .account-label {
+  .account-label,
+  .sync-label {
     display: none;
+  }
+
+  .sync-btn {
+    width: 40px;
+    padding: 0;
   }
 }
 

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
 from typing import Any
@@ -53,23 +54,88 @@ class SyncService:
         for record in records:
             yield record
 
+    def _start_sync_run(
+        self,
+        data_type: str,
+        start_date: str | None,
+        end_date: str | None,
+        force_full: bool,
+        sync_id: str | None,
+        source: str,
+    ) -> str | None:
+        """Best-effort history recording; never break a sync for an audit write."""
+        starter = getattr(self.db, "start_sync_run", None)
+        if starter is None:
+            return None
+        try:
+            return starter(
+                sync_id=sync_id or str(uuid.uuid4()),
+                data_type=data_type,
+                source=source,
+                requested_start_date=start_date,
+                requested_end_date=end_date,
+                incremental=start_date is None and not force_full,
+            )
+        except Exception:
+            logger.warning("Failed to record sync start for %s", data_type, exc_info=True)
+            return None
+
+    def _finish_sync_run(self, run_id: str | None, result: dict[str, Any]) -> None:
+        if run_id is None:
+            return
+        finisher = getattr(self.db, "finish_sync_run", None)
+        if finisher is None:
+            return
+        try:
+            finisher(
+                run_id,
+                str(result.get("status", "error")),
+                added=int(result.get("added", 0) or 0),
+                updated=int(result.get("updated", 0) or 0),
+                skipped=int(result.get("skipped", 0) or 0),
+                error_code=result.get("error_code"),
+            )
+        except Exception:
+            logger.warning("Failed to record sync result for run %s", run_id, exc_info=True)
+
     async def sync_data_type(
         self,
         data_type: str,
         start_date: str | None = None,
         end_date: str | None = None,
         force_full: bool = False,
+        *,
+        sync_id: str | None = None,
+        source: str = "cli",
     ) -> dict:
-        """Synchronize one type while preventing overlapping sync operations."""
+        """Synchronize one type while preventing overlapping sync operations.
+
+        ``sync_id`` groups all type runs in one CLI/web/MCP sync; ``source`` is
+        recorded in ``sync_runs``. Neither value is credentials or health data.
+        """
         # Check and reserve without awaiting, making this atomic for tasks on this loop.
         if self._sync_active or self._sync_lock.locked():
             raise RuntimeError("Another synchronization is already in progress")
         self._sync_active = True
+        run_id = self._start_sync_run(
+            data_type, start_date, end_date, force_full, sync_id, source
+        )
         try:
             async with self._sync_lock:
-                return await self._sync_data_type_unlocked(
+                result = await self._sync_data_type_unlocked(
                     data_type, start_date, end_date, force_full
                 )
+            self._finish_sync_run(run_id, result)
+            return result
+        except asyncio.CancelledError:
+            self._finish_sync_run(run_id, {"status": "cancelled"})
+            raise
+        except Exception as exc:
+            self._finish_sync_run(
+                run_id,
+                {"status": "error", "error_code": type(exc).__name__},
+            )
+            raise
         finally:
             self._sync_active = False
 
@@ -368,9 +434,21 @@ class SyncService:
         start_date: str | None = None,
         end_date: str | None = None,
         force_full: bool = False,
+        *,
+        sync_id: str | None = None,
+        source: str = "cli",
     ) -> dict:
         """Synchronous wrapper for sync_data_type.
 
         Use this when calling from synchronous code.
         """
-        return asyncio.run(self.sync_data_type(data_type, start_date, end_date, force_full))
+        return asyncio.run(
+            self.sync_data_type(
+                data_type,
+                start_date,
+                end_date,
+                force_full,
+                sync_id=sync_id,
+                source=source,
+            )
+        )

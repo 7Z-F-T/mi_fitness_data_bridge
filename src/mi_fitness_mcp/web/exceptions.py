@@ -74,3 +74,27 @@ class QueryError(ApiError):
     status_code = 500
     code = "QUERY_ERROR"
     message = "读取本地数据时发生错误，请稍后重试。"
+
+
+class SyncConfirmationError(ApiError):
+    status_code = 403
+    code = "SYNC_CONFIRMATION_REQUIRED"
+    message = "缺少同步确认头，请从本地数据台发起同步。"
+
+
+class SyncInProgressError(ApiError):
+    status_code = 409
+    code = "SYNC_IN_PROGRESS"
+    message = "已有同步任务正在进行，请等待完成后再试。"
+
+
+class CredentialsMissingError(ApiError):
+    status_code = 409
+    code = "CREDENTIALS_MISSING"
+    message = "未找到小米账户凭证，请先在终端运行 `mi-fitness-bridge setup`。"
+
+
+class InvalidDataTypesError(ApiError):
+    status_code = 422
+    code = "INVALID_DATA_TYPES"
+    message = "包含不支持的数据类型，请检查后重试。"

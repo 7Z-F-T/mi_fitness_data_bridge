@@ -22,6 +22,8 @@ from mi_fitness_mcp.models import (
 )
 from mi_fitness_mcp.storage import Database
 from mi_fitness_mcp.web.app import create_app
+from mi_fitness_mcp.web.dependencies import get_sync_coordinator
+from mi_fitness_mcp.web.schemas import SyncStatus, SyncStatusItem
 
 USER_ID = "synthetic-web-user"
 DATE = "2026-11-12"
@@ -268,7 +270,7 @@ def test_invalid_date_returns_422(client):
     assert "日期格式" in payload["error"]["details"][0]["message"]
 
 
-def test_only_get_is_exposed(client):
+def test_only_get_and_post_are_exposed(client):
     response = client.post("/api/home")
     assert response.status_code == 405
     _assert_json(response)
@@ -282,7 +284,8 @@ def test_only_get_is_exposed(client):
         for method in path
         if method in http_methods
     }
-    assert methods <= {"get"}
+    assert methods <= {"get", "post"}
+    assert "post" in openapi["paths"]["/api/sync"]
     assert "/api/home" in openapi["paths"]
 
 
@@ -364,3 +367,156 @@ def test_read_only_database_missing_file(tmp_path):
     read_only = Database(tmp_path / "missing.db", read_only=True)
     with pytest.raises(FileNotFoundError):
         read_only.ping()
+
+
+def test_sync_status_lists_all_types_as_never_before_first_sync(client):
+    response = client.get("/api/sync/status")
+    assert response.status_code == 200
+    _assert_json(response)
+    data = response.json()
+    assert data["active"] is False
+    assert len(data["items"]) == 9
+    assert {item["lastStatus"] for item in data["items"]} == {"never"}
+    assert all(item["lastSyncedAt"] is None for item in data["items"])
+
+
+def test_sync_status_reads_latest_sync_run(db_path):
+    db = Database(db_path)
+    run_id = db.start_sync_run(
+        sync_id="synthetic-sync",
+        data_type="sleep",
+        source="cli",
+        incremental=True,
+    )
+    db.finish_sync_run(
+        run_id,
+        "ok",
+        added=5,
+        updated=1,
+        skipped=2,
+    )
+
+    app = create_app(db_path=db_path)
+    with TestClient(app) as client:
+        response = client.get("/api/sync/status")
+    assert response.status_code == 200
+    items = {item["dataType"]: item for item in response.json()["items"]}
+    item = items["sleep"]
+    assert item["lastStatus"] == "ok"
+    assert item["recordsAdded"] == 5
+    assert item["recordsUpdated"] == 1
+    assert item["recordsSkipped"] == 2
+    assert item["source"] == "cli"
+    assert item["incremental"] is True
+    assert item["lastSyncedAt"]
+
+
+def test_sync_status_falls_back_to_legacy_watermark(db_path):
+    db = Database(db_path)
+    db.update_sync_state("sleep")
+
+    app = create_app(db_path=db_path)
+    with TestClient(app) as client:
+        response = client.get("/api/sync/status")
+    assert response.status_code == 200
+    items = {item["dataType"]: item for item in response.json()["items"]}
+    assert items["sleep"]["lastStatus"] == "unknown"
+    assert items["sleep"]["source"] == "legacy"
+    assert items["sleep"]["lastSyncedAt"]
+
+
+def test_sync_requires_confirmation_header(client):
+    response = client.post("/api/sync", json={"full": False})
+    assert response.status_code == 403
+    _assert_json(response)
+    assert response.json()["error"]["code"] == "SYNC_CONFIRMATION_REQUIRED"
+
+
+def test_sync_rejects_unknown_data_types(client):
+    response = client.post(
+        "/api/sync",
+        headers={"X-Mi-Fitness-Confirm": "sync"},
+        json={"dataTypes": ["invented"]},
+    )
+    assert response.status_code == 422
+    _assert_json(response)
+    assert response.json()["error"]["code"] == "INVALID_DATA_TYPES"
+
+
+def test_sync_rejects_empty_data_types(client):
+    response = client.post(
+        "/api/sync",
+        headers={"X-Mi-Fitness-Confirm": "sync"},
+        json={"dataTypes": []},
+    )
+    assert response.status_code == 422
+    _assert_json(response)
+    assert response.json()["error"]["code"] == "INVALID_DATA_TYPES"
+
+
+def test_sync_rejects_credentials_in_body(client):
+    response = client.post(
+        "/api/sync",
+        headers={"X-Mi-Fitness-Confirm": "sync"},
+        json={"passToken": "must-not-be-accepted"},
+    )
+    assert response.status_code == 422
+    _assert_json(response)
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_sync_missing_keyring_credentials(client, monkeypatch):
+    monkeypatch.setattr(
+        "mi_fitness_mcp.web.sync.load_mi_fitness_token", lambda: (None, None)
+    )
+    response = client.post(
+        "/api/sync",
+        headers={"X-Mi-Fitness-Confirm": "sync"},
+        json={"full": False},
+    )
+    assert response.status_code == 409
+    _assert_json(response)
+    assert response.json()["error"]["code"] == "CREDENTIALS_MISSING"
+
+
+class _FakeCoordinator:
+    def __init__(self):
+        self.started = []
+
+    async def start(self, data_types=None, *, full=False):
+        self.started.append((data_types, full))
+        return "synthetic-sync-id"
+
+    def status(self):
+        return SyncStatus(
+            active=False,
+            sync_id="synthetic-sync-id",
+            state="completed",
+            items=[
+                SyncStatusItem(
+                    data_type="sleep",
+                    last_status="ok",
+                    source="web",
+                    incremental=True,
+                )
+            ],
+        )
+
+
+def test_sync_start_and_status_with_fake_coordinator(db_path):
+    app = create_app(db_path=db_path)
+    fake = _FakeCoordinator()
+    app.dependency_overrides[get_sync_coordinator] = lambda: fake
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/sync",
+            headers={"X-Mi-Fitness-Confirm": "sync"},
+            json={"dataTypes": ["sleep"], "full": True},
+        )
+        status = client.get("/api/sync/status")
+    assert response.status_code == 202
+    assert response.json()["syncId"] == "synthetic-sync-id"
+    assert response.json()["status"] == "accepted"
+    assert fake.started == [(["sleep"], True)]
+    assert status.status_code == 200
+    assert status.json()["items"][0]["lastStatus"] == "ok"

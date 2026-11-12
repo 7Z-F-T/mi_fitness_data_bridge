@@ -15,14 +15,20 @@ SummaryRange = Literal["day", "week", "month", "year"]
 SleepStageName = Literal["deep", "light", "rem", "awake"]
 SleepScoreSource = Literal["sleep_record", "daily_report"]
 HeartRateSampleType = Literal["resting", "active", "passive", "workout"]
+SyncStatusValue = Literal[
+    "ok", "partial", "error", "running", "cancelled", "never", "unknown"
+]
+SyncState = Literal["idle", "running", "completed", "error"]
+
+
+def _to_camel(value: str) -> str:
+    parts = value.split("_")
+    return parts[0] + "".join(part.capitalize() for part in parts[1:])
 
 
 class ApiModel(BaseModel):
     model_config = ConfigDict(
-        alias_generator=lambda value: "".join(
-            part if index == 0 else part.capitalize()
-            for index, part in enumerate(value.split("_"))
-        ),
+        alias_generator=_to_camel,
         populate_by_name=True,
         from_attributes=True,
     )
@@ -181,6 +187,46 @@ class Goal(ApiModel):
 class HealthResponse(ApiModel):
     status: Literal["ok"] = "ok"
     database: Literal["ok"] = "ok"
+
+
+class SyncStatusItem(ApiModel):
+    data_type: str
+    last_status: SyncStatusValue
+    last_synced_at: datetime | None = None
+    records_added: int = 0
+    records_updated: int = 0
+    records_skipped: int = 0
+    error_code: str | None = None
+    source: str = "never"
+    incremental: bool = True
+    requested_start_date: str | None = None
+    requested_end_date: str | None = None
+
+
+class SyncStatus(ApiModel):
+    active: bool = False
+    sync_id: str | None = None
+    state: SyncState = "idle"
+    last_error_code: str | None = None
+    last_error_message: str | None = None
+    items: list[SyncStatusItem] = Field(default_factory=list)
+
+
+class SyncRequest(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=_to_camel,
+        populate_by_name=True,
+        extra="forbid",
+    )
+
+    data_types: list[str] | None = None
+    full: bool = False
+
+
+class SyncStartResponse(ApiModel):
+    sync_id: str
+    status: Literal["accepted"] = "accepted"
+    message: str = "同步已开始，请轮询同步状态。"
 
 
 class ApiErrorDetail(ApiModel):

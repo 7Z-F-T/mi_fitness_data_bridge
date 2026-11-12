@@ -1,5 +1,5 @@
-"""Local read-only HTTP API for the Mi Fitness SQLite cache."""
+"""Local HTTP API for the Mi Fitness SQLite cache.
 
-from mi_fitness_mcp.web.app import create_app
-
-__all__ = ["create_app"]
+Import ``create_app`` from ``mi_fitness_mcp.web.app`` explicitly to avoid a
+package-import cycle between the app, routes and sync coordinator.
+"""

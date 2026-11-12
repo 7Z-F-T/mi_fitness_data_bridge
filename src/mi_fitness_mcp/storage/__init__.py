@@ -3,8 +3,9 @@
 import json
 import os
 import sqlite3
+import uuid
 from contextlib import contextmanager, suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -383,6 +384,39 @@ class Database:
                     last_record_timestamp TIMESTAMP,
                     records_count INTEGER DEFAULT 0
                 )
+            """)
+
+            # 每次同步的分类历史：何时开始/结束、是否成功、计数与来源。
+            # 不保存异常文本或健康数值，避免把敏感内容写进运维表。
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sync_runs (
+                    id TEXT PRIMARY KEY,
+                    sync_id TEXT NOT NULL,
+                    data_type TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'cli',
+                    status TEXT NOT NULL,
+                    started_at TIMESTAMP NOT NULL,
+                    finished_at TIMESTAMP,
+                    records_added INTEGER NOT NULL DEFAULT 0,
+                    records_updated INTEGER NOT NULL DEFAULT 0,
+                    records_skipped INTEGER NOT NULL DEFAULT 0,
+                    error_code TEXT,
+                    requested_start_date TEXT,
+                    requested_end_date TEXT,
+                    incremental BOOLEAN NOT NULL DEFAULT 1
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_sync_runs_type_started
+                ON sync_runs(data_type, started_at)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_sync_runs_sync_id
+                ON sync_runs(sync_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_sync_runs_started
+                ON sync_runs(started_at)
             """)
 
             # 创建索引以提升查询性能
@@ -1111,6 +1145,117 @@ class Database:
                 (data_type,),
             ).fetchone()
             return dict(row) if row else None
+
+    def get_sync_states(self) -> list[dict[str, Any]]:
+        """Return the successful-sync watermarks for every data type."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM sync_state ORDER BY data_type"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def start_sync_run(
+        self,
+        *,
+        sync_id: str,
+        data_type: str,
+        source: str = "cli",
+        requested_start_date: str | None = None,
+        requested_end_date: str | None = None,
+        incremental: bool = True,
+    ) -> str:
+        """Insert a running sync-history row and return its local run ID."""
+        run_id = str(uuid.uuid4())
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO sync_runs (
+                    id, sync_id, data_type, source, status, started_at,
+                    requested_start_date, requested_end_date, incremental
+                ) VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    sync_id,
+                    data_type,
+                    source,
+                    datetime.now(UTC).isoformat(),
+                    requested_start_date,
+                    requested_end_date,
+                    1 if incremental else 0,
+                ),
+            )
+            conn.commit()
+        return run_id
+
+    def finish_sync_run(
+        self,
+        run_id: str,
+        status: str,
+        *,
+        added: int = 0,
+        updated: int = 0,
+        skipped: int = 0,
+        error_code: str | None = None,
+    ) -> None:
+        """Finish a sync-history row with its status and counts."""
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE sync_runs SET
+                    status = ?,
+                    finished_at = ?,
+                    records_added = ?,
+                    records_updated = ?,
+                    records_skipped = ?,
+                    error_code = ?
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    datetime.now(UTC).isoformat(),
+                    int(added),
+                    int(updated),
+                    int(skipped),
+                    error_code,
+                    run_id,
+                ),
+            )
+            conn.commit()
+
+    def latest_sync_runs(self) -> list[dict[str, Any]]:
+        """Latest run per data type, including an in-progress row."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM (
+                    SELECT sync_runs.*,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY data_type
+                               ORDER BY started_at DESC, rowid DESC
+                           ) AS row_number
+                    FROM sync_runs
+                )
+                WHERE row_number = 1
+                ORDER BY data_type
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def query_sync_runs(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """Recent sync-history rows, newest first."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM sync_runs
+                ORDER BY started_at DESC, rowid DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def query_daily_activity(
         self,

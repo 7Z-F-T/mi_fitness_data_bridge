@@ -1,19 +1,22 @@
 import dayjs from 'dayjs'
-import type {
-  DailyActivity,
-  FitnessApi,
-  GpsPoint,
-  HeartRateSample,
-  HomeSummary,
-  SleepSession,
-  SleepStage,
-  SummaryRange,
-  Workout,
-  WorkoutDetail,
-  WorkoutSample,
-  WorkoutSummary,
-  WorkoutSummaryBucket,
-  WorkoutTypeSummary,
+import {
+  SYNC_DATA_TYPES,
+  type DailyActivity,
+  type FitnessApi,
+  type GpsPoint,
+  type HeartRateSample,
+  type HomeSummary,
+  type SleepSession,
+  type SleepStage,
+  type SummaryRange,
+  type SyncStartResponse,
+  type SyncStatus,
+  type Workout,
+  type WorkoutDetail,
+  type WorkoutSample,
+  type WorkoutSummary,
+  type WorkoutSummaryBucket,
+  type WorkoutTypeSummary,
 } from './types'
 import { rangeBounds } from '../utils/format'
 import { normalizeActivityType } from '../utils/activity'
@@ -499,5 +502,35 @@ export const mockApi: FitnessApi = {
 
   getGoals() {
     return delay([])
+  },
+
+  getSyncStatus() {
+    const status: SyncStatus = {
+      active: false,
+      syncId: null,
+      state: 'idle',
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      items: SYNC_DATA_TYPES.map((dataType) => ({
+        dataType,
+        lastStatus: 'never',
+        lastSyncedAt: null,
+        recordsAdded: 0,
+        recordsUpdated: 0,
+        recordsSkipped: 0,
+        errorCode: null,
+        source: 'never',
+        incremental: true,
+        requestedStartDate: null,
+        requestedEndDate: null,
+      })),
+    }
+    return delay(status)
+  },
+
+  startSync(): Promise<SyncStartResponse> {
+    return Promise.reject(
+      new Error('演示数据模式不支持同步；请启动本地 API 后重试。'),
+    )
   },
 }

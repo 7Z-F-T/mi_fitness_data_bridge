@@ -229,7 +229,7 @@ Issue、测试、文档和截图中只可使用合成数据。安全问题请遵
 
 ## 本地 Web 分析页面（可选）
 
-`frontend/` 是一个独立的 Vue 3 + TypeScript 分析页面，按[设计手稿](docs/设计手稿.md)实现首页、运动总结和运动目标三个页面。它默认使用合成演示数据，只读取本地缓存，不会接收或上传凭证。
+`frontend/` 是一个独立的 Vue 3 + TypeScript 分析页面，按[设计手稿](docs/设计手稿.md)实现首页、运动总结和运动目标三个页面。它默认使用合成演示数据；连接本地 API 后，顶部“同步”入口可查看各分类的最近同步时间/结果，并触发增量同步。
 
 ```bash
 cd frontend
@@ -237,14 +237,15 @@ pnpm install
 pnpm dev
 ```
 
-前端使用 pnpm 管理依赖（`package.json` 已固定 `packageManager`）。连接真实 SQLite 缓存时，使用内置的本地只读 API：
+前端使用 pnpm 管理依赖（`package.json` 已固定 `packageManager`）。连接真实 SQLite 缓存时，使用内置的本地 API：
 
 ```bash
 pip install -e '.[web]'
 mi-fitness-bridge web --host 127.0.0.1 --port 8765
 ```
 
-- API 默认只监听 `127.0.0.1`，返回 JSON，只暴露 GET 读接口，并以 SQLite `mode=ro` 打开缓存，不修改数据、不读取凭证。
+- 查询接口只读（SQLite `mode=ro`）；`POST /api/sync` 是唯一的写动作，使用本机钥匙串中已配置的凭证，需要 `X-Mi-Fitness-Confirm: sync` 确认头，会写入本地缓存并联系小米云。API 不在 HTTP 中接收任何凭证。
+- 同步记录写入 `sync_runs` 表：分类、开始/结束时间、成功/部分/失败、计数、来源和错误码。CLI 不传日期默认按水位增量同步，`--full` 忽略水位。
 - 前端配置 `VITE_API_BASE_URL=http://127.0.0.1:8765/api` 即可切换为真实数据。
 - 接口、标准状态码、统一错误信封和账号选择规则详见 [docs/web-api.md](docs/web-api.md)；前端契约见 [frontend/README.md](frontend/README.md)。
 - 不要将页面或 API 部署到公网。数据库包含明文 `user_id` 和健康数据。

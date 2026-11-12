@@ -1,8 +1,8 @@
 # Local Web API
 
-只读、仅本机的 HTTP API，为 `frontend/` 数据看板提供真实 SQLite 缓存数据。
+仅本机的 HTTP API，为 `frontend/` 数据看板提供真实 SQLite 缓存数据。查询接口只读；显式的 `POST /api/sync` 会使用本机钥匙串中已配置的凭证同步数据并写入本地缓存。
 
-> **Local-only and sensitive.** 返回内容包含健康数据。默认只监听 `127.0.0.1`，不要部署到公网，不要加托管代理或公网鉴权层。API 不需要、也不会读取 `passToken`；凭证仍只通过 `mi-fitness-bridge setup` 保存到系统钥匙串。
+> **Local-only and sensitive.** 返回内容包含健康数据。默认只监听 `127.0.0.1`，不要部署到公网，不要加托管代理或公网鉴权层。API 不需要、也不会在 HTTP 中接收 `passToken`；凭证仍只通过 `mi-fitness-bridge setup` 保存到系统钥匙串。
 
 ## 启动
 
@@ -28,8 +28,8 @@ Web 依赖未安装。请运行：pip install -e '.[web]'
 
 | 项目 | 约定 |
 | --- | --- |
-| 方法 | 只暴露 **GET** 读接口；PUT/PATCH/DELETE 返回 `405` |
-| 请求体 | 无；查询参数放在 URL 中 |
+| 方法 | 查询用 **GET**；本地同步用 **POST /api/sync**；PUT/PATCH/DELETE 返回 `405` |
+| 请求体 | GET 无请求体；`POST /api/sync` 使用 JSON |
 | 响应 | `application/json` |
 | 错误 | 统一 `{"error": {...}}` 信封 |
 | 请求追踪 | 响应头 `X-Request-ID`，也可由客户端传入 |
@@ -37,8 +37,8 @@ Web 依赖未安装。请运行：pip install -e '.[web]'
 | 安全头 | `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer` |
 | CORS | 默认允许 `127.0.0.1:5173`、`localhost:5173`、`127.0.0.1:4173`、`localhost:4173`；可用 `MI_FITNESS_WEB_CORS_ORIGINS` 覆盖 |
 
-> 浏览器 CORS 预检会使用 `OPTIONS`；业务接口本身仍然只接受 `GET`。
-> 当前没有写操作，因此未暴露 POST；对读接口发 POST 会返回 `405`。
+> 浏览器 CORS 预检会使用 `OPTIONS`。
+> `POST /api/sync` 必须带 `X-Mi-Fitness-Confirm: sync` 自定义头；这会让浏览器先发 CORS 预检，防止任意网页通过简单表单触发本地同步。
 
 ## 账号选择
 
@@ -177,6 +177,67 @@ MI_FITNESS_WEB_USER_ID=<数据库中的 user_id> mi-fitness-bridge web
 
 目标页仍在规划中，当前返回 `[]`。
 
+### `GET /api/sync/status`
+
+返回每种数据类型最近一次同步的状态，以及当前网页同步任务是否仍在运行。
+
+```json
+{
+  "active": false,
+  "syncId": "9f0c...",
+  "state": "completed",
+  "lastErrorCode": null,
+  "lastErrorMessage": null,
+  "items": [
+    {
+      "dataType": "sleep",
+      "lastStatus": "ok",
+      "lastSyncedAt": "2026-11-12T10:30:12+00:00",
+      "recordsAdded": 12,
+      "recordsUpdated": 0,
+      "recordsSkipped": 0,
+      "errorCode": null,
+      "source": "web",
+      "incremental": true,
+      "requestedStartDate": null,
+      "requestedEndDate": null
+    }
+  ]
+}
+```
+
+`lastStatus` 取值：`ok`、`partial`、`error`、`running`、`cancelled`、`never`、`unknown`。旧版本数据库只有 `sync_state` 水位时，会显示 `unknown` + `source: "legacy"`。
+
+### `POST /api/sync`
+
+启动本地同步。使用钥匙串中已配置的账号，不接收任何凭证字段。
+
+请求头：
+
+```
+Content-Type: application/json
+X-Mi-Fitness-Confirm: sync
+```
+
+请求体：
+
+```json
+{"dataTypes": ["sleep"], "full": false}
+```
+
+- `dataTypes` 省略时同步全部支持的类型；空数组非法。
+- `full=false` 为默认增量模式：从 `sync_state.last_record_timestamp` 继续；没有水位时使用配置的默认回看窗口（默认 30 天）。
+- `full=true` 忽略水位，但仍受日期范围/默认回看窗口限制。
+- 请求体中的 `passToken`、`pass_token` 等未知字段会返回 `422`。
+
+成功返回 `202 Accepted`：
+
+```json
+{"syncId": "9f0c...", "status": "accepted", "message": "同步已开始，请轮询同步状态。"}
+```
+
+随后轮询 `GET /api/sync/status`。同步在后台运行；页面关闭不会自动取消。同一网页进程同时只允许一个同步任务。
+
 ## 错误信封
 
 所有预期错误返回同一形状：
@@ -198,9 +259,13 @@ MI_FITNESS_WEB_USER_ID=<数据库中的 user_id> mi-fitness-bridge web
 | 404 | `WORKOUT_NOT_FOUND` | 指定运动不存在 |
 | 404 | `ROUTE_NOT_FOUND` | 接口路径不存在 |
 | 404 | `NO_DATA` | 数据库没有健康数据，或指定账号无数据 |
-| 405 | `METHOD_NOT_ALLOWED` | 使用了 GET 以外的方法 |
+| 403 | `SYNC_CONFIRMATION_REQUIRED` | `POST /api/sync` 缺少确认头 |
+| 405 | `METHOD_NOT_ALLOWED` | 接口不支持该请求方法 |
 | 409 | `AMBIGUOUS_USER` | 数据库包含多个账号且未设置 `MI_FITNESS_WEB_USER_ID` |
+| 409 | `SYNC_IN_PROGRESS` | 网页同步任务仍在运行 |
+| 409 | `CREDENTIALS_MISSING` | 本机钥匙串中尚未配置小米凭证 |
 | 422 | `VALIDATION_ERROR` | 日期、range、limit 等参数不合法 |
+| 422 | `INVALID_DATA_TYPES` | 同步请求包含不支持的数据类型 |
 | 500 | `QUERY_ERROR` | 读取数据库时发生非预期错误 |
 | 500 | `INTERNAL_ERROR` | 未捕获的服务器错误 |
 | 503 | `DATABASE_UNAVAILABLE` | 数据库不存在、结构过旧或无法打开 |
@@ -208,6 +273,30 @@ MI_FITNESS_WEB_USER_ID=<数据库中的 user_id> mi-fitness-bridge web
 | 503 | `DATABASE_ERROR` | 底层 SQLite 错误兜底 |
 
 错误消息是面向用户的简短中文提示；`code` 稳定，适合程序判断。`requestId` 与响应头 `X-Request-ID` 对应，便于排查。
+
+## 同步记录与增量策略
+
+每次同步会在 SQLite 的 `sync_runs` 表写入一行分类记录：
+
+| 字段 | 含义 |
+| --- | --- |
+| `sync_id` | 一次完整同步的标识，CLI/网页/MCP 共用 |
+| `data_type` | 数据类型 |
+| `source` | `cli` / `mcp` / `web` |
+| `status` | `running` / `ok` / `partial` / `error` / `cancelled` |
+| `started_at` / `finished_at` | 开始/结束时间 |
+| `records_added/updated/skipped` | 计数 |
+| `error_code` | 异常类型（不保存异常文本或健康数据） |
+| `requested_start_date/end_date` | 用户显式指定的范围（未指定为 `null`） |
+| `incremental` | 是否使用增量水位 |
+
+默认行为：
+
+- CLI 不传 `--start-date`/`--end-date` 时按上次水位增量同步；`--full` 忽略水位。
+- 网页同步默认增量；勾选“完整同步”等同于 `full=true`。
+- MCP `sync_data` 的 `force_full_sync` 也会记录到 `sync_runs`，`source=mcp`。
+- 同步失败不会清除 `sync_state` 水位；下次仍从最后一次成功位置继续。
+- 不要在 CLI、MCP 和网页之间同时触发同步；SQLite 会串行化写入，但并发任务可能互相等待。
 
 ## 连接前端
 
@@ -235,7 +324,7 @@ pnpm dev
 
 ## 限制
 
-- 这是单用户、本机只读 API，没有登录/鉴权；不要暴露到公网。
+- 这是单用户、本机 API，没有登录/鉴权；不要暴露到公网。查询只读；`POST /api/sync` 是唯一的写动作，且必须带确认头。
 - `goals` 还没有持久化实现，固定返回空列表。
 - 某些汇总字段取决于设备和上游数据，可能为 `null`。
 - `daily_activity` 的 `activeMinutes`、`floors`、`totalKcal` 当前适配器通常不填，因此多为 `null`。

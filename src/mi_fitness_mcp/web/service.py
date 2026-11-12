@@ -100,6 +100,11 @@ class FitnessService:
         self._db: Database | None = None
         self._query: QueryService | None = None
 
+    def invalidate(self) -> None:
+        """Drop cached read state after a sync writes new data."""
+        self._db = None
+        self._query = None
+
     @property
     def db(self) -> Database:
         self._load()

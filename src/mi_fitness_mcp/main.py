@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import getpass
 import sys
+import uuid
 
 from mi_fitness_mcp.adapters.mi_fitness_cloud import MiFitnessCloudAdapter
 from mi_fitness_mcp.auth import (
@@ -196,6 +197,12 @@ async def cmd_sync_async(args):
             default_lookback_days=config.default_lookback_days,
             chunk_days=config.sync_chunk_days,
         )
+        sync_id = str(uuid.uuid4())
+        full_sync = bool(getattr(args, "full", False))
+        if not args.start_date and not args.end_date:
+            print("未指定日期：按上次同步水位或默认回看窗口进行增量同步。")
+        if full_sync:
+            print("完整同步模式：忽略增量水位，仍受日期范围限制。")
         data_types = [args.type] if args.type else adapter.get_available_data_types()
         print(f"正在同步 {len(data_types)} 种数据类型...")
         print()
@@ -207,14 +214,22 @@ async def cmd_sync_async(args):
                         data_type=data_type,
                         start_date=args.start_date,
                         end_date=args.end_date,
+                        force_full=full_sync,
+                        sync_id=sync_id,
+                        source="cli",
                     ),
                     timeout=config.sync_type_timeout_seconds,
                 )
                 status = result.get("status", "ok")
                 if status == "ok":
+                    range_text = (
+                        f" ({result['start_date']} → {result['end_date']})"
+                        if result.get("start_date") and result.get("end_date")
+                        else ""
+                    )
                     print(
                         f"✅ {data_type}: 新增 {result['added']} 条，"
-                        f"更新 {result['updated']} 条"
+                        f"更新 {result['updated']} 条{range_text}"
                     )
                 else:
                     had_failures = True
@@ -313,6 +328,11 @@ def main():
     )
     sync_parser.add_argument("--start-date", help="开始日期（YYYY-MM-DD）")
     sync_parser.add_argument("--end-date", help="结束日期（YYYY-MM-DD）")
+    sync_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="忽略增量水位；仍按日期范围或默认回看窗口同步",
+    )
     sync_parser.add_argument("--db", help=db_help)
 
     export_parser = subparsers.add_parser("export", help="Export normalized local data")

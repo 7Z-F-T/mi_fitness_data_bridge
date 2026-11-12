@@ -46,7 +46,7 @@ The app defaults to **synthetic demo data** from `src/api/mock.ts`; the header
 shows a `演示数据 / Demo data` badge. All demo values are generated, contain no
 real health records, and are intentionally labeled.
 
-To connect the real local cache, start the bridge's local read-only API:
+To connect the real local cache, start the bridge's local API:
 
 ```bash
 # from the repository root
@@ -65,10 +65,16 @@ VITE_API_BASE_URL=http://127.0.0.1:8765/api
 > changing `.env.local`, otherwise the app keeps using the synthetic demo data.
 
 A browser cannot open the SQLite file directly, so the Python bridge exposes a
-read-only FastAPI service. It opens SQLite with `mode=ro`, binds to `127.0.0.1`
-by default, returns JSON-only GET responses, and never reads credentials.
-See [`../docs/web-api.md`](../docs/web-api.md) for status codes, error envelopes,
-account selection, and security notes.
+local FastAPI service. Query endpoints open SQLite with `mode=ro`; the explicit
+`POST /api/sync` action uses credentials already stored in the OS keyring and
+writes the local cache. The API never accepts credentials in HTTP. It binds to
+`127.0.0.1` by default. See [`../docs/web-api.md`](../docs/web-api.md) for status
+codes, error envelopes, sync history, account selection, and security notes.
+
+The header **Sync** panel calls `GET /api/sync/status` to show each dataset's
+last sync time/status and starts an incremental sync by default via
+`POST /api/sync` with the required `X-Mi-Fitness-Confirm: sync` header. A full
+sync checkbox maps to `full=true`.
 
 ### API contract
 
@@ -83,6 +89,8 @@ Paths below are relative to `VITE_API_BASE_URL` (for example
 | `GET /workouts/{workoutId}` | `WorkoutDetail` (`workout`, `samples`, `gps`) |
 | `GET /workouts/summary?range=day\|week\|month\|year&anchor=YYYY-MM-DD` | `WorkoutSummary` (buckets, totals, type mix, workouts) |
 | `GET /goals` | `Goal[]` (currently `[]`) |
+| `GET /sync/status` | `SyncStatus` (active state + per-dataset last status/counts/source) |
+| `POST /sync` | `SyncStartResponse`; headers `Content-Type: application/json`, `X-Mi-Fitness-Confirm: sync`; body `{dataTypes?, full?}`; starts a background sync |
 
 Mapping to the bridge's SQLite tables:
 

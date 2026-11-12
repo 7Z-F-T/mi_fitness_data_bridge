@@ -26,15 +26,16 @@ mi-fitness-bridge web --host 127.0.0.1 --port 8765
 
 - 技术栈：Vue 3 + TypeScript + Vite，使用 pnpm 管理依赖；命令：`cd frontend && pnpm install && pnpm build`。
 - 前端只读本地缓存或导出结果；**不得在浏览器中接收、存储或回传 passToken/user_id 凭证**。账户入口只说明 `mi-fitness-bridge setup` 并链接官方登录页，不抓取登录结果。
-- 默认使用合成演示数据并显示“演示数据”标识；连接真实数据需本地只读 API（仅监听 `127.0.0.1`），禁止公网部署，且不得引入遥测或第三方分析。
+- 默认使用合成演示数据并显示“演示数据”标识；连接真实数据需本地 API（查询只读，同步入口为显式 POST；仅监听 `127.0.0.1`），禁止公网部署，且不得引入遥测或第三方分析。
 
 ## 本地 Web API（src/mi_fitness_mcp/web/）
 
-- API 只用于本机数据看板：默认 `127.0.0.1:8765`，仅暴露 GET 读接口；PUT/PATCH/DELETE 一律 405，OPTIONS 仅用于本地 CORS 预检。禁止公网部署、托管代理或多用户服务。
-- SQLite 必须以 `Database(..., read_only=True)` / `mode=ro` 打开；不得调用写方法、schema migration 或修改缓存。API 不读取 keyring / passToken。
-- 异常类型集中在 `web/exceptions.py`；所有错误返回统一 JSON 信封（`code`/`message`/`request_id`/`details`）并使用标准 HTTP 状态码；不要向客户端泄露 SQL、路径或凭证。
+- API 只用于本机数据看板：默认 `127.0.0.1:8765`。查询接口仅 GET；同步入口仅 `POST /api/sync`，必须带 `X-Mi-Fitness-Confirm: sync`；PUT/PATCH/DELETE 一律 405，OPTIONS 仅用于本地 CORS 预检。禁止公网部署、托管代理或多用户服务。
+- 查询服务必须以 `Database(..., read_only=True)` / `mode=ro` 打开，不得调用写方法或修改缓存。唯一的例外是显式同步动作：它可以创建可写 `Database` 并调用 `SyncService`，但必须使用钥匙串中已有的凭证，不得在 HTTP 请求/响应/日志中接收或回显 passToken。
+- 异常类型集中在 `web/exceptions.py`；所有错误返回统一 JSON 信封（`code`/`message`/`requestId`/`details`）并使用标准 HTTP 状态码；不要向客户端泄露 SQL、路径或凭证。
+- 同步历史写入 `sync_runs`（分类、开始/结束、状态、计数、来源、error_code）；不得写入异常原文、解密数据或健康数值。
 - 响应字段使用 Pydantic camelCase alias，与 `frontend/src/api/types.ts` 对齐；新增/修改字段时同步前端类型、`docs/web-api.md` 和测试。
-- API 测试一律使用临时 SQLite + 合成记录（`tests/test_web_api.py`），不得读取真实数据库或发出真实网络请求。
+- API 测试一律使用临时 SQLite + 合成记录（`tests/test_web_api.py`），不得读取真实数据库或发出真实网络请求；同步流程用 fake coordinator/monkeypatch 验证，禁止触发真实小米同步。
 
 ## 既有工作规则（原文保留）
 

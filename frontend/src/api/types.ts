@@ -6,6 +6,58 @@ export type SleepScoreSource = 'sleep_record' | 'daily_report' | null
 
 export type HeartRateSampleType = 'resting' | 'active' | 'passive' | 'workout'
 
+export type SyncStatusValue =
+  | 'ok'
+  | 'partial'
+  | 'error'
+  | 'running'
+  | 'cancelled'
+  | 'never'
+  | 'unknown'
+
+export type SyncState = 'idle' | 'running' | 'completed' | 'error'
+
+export const SYNC_DATA_TYPES = [
+  'daily_activity',
+  'heart_rate',
+  'body_measurements',
+  'sleep',
+  'workouts',
+  'workout_detail',
+  'spo2',
+  'stress',
+  'abnormal_heart_beat',
+] as const
+
+export interface SyncStatusItem {
+  dataType: string
+  lastStatus: SyncStatusValue
+  lastSyncedAt: string | null
+  recordsAdded: number
+  recordsUpdated: number
+  recordsSkipped: number
+  errorCode: string | null
+  source: string
+  incremental: boolean
+  requestedStartDate: string | null
+  requestedEndDate: string | null
+}
+
+export interface SyncStatus {
+  active: boolean
+  syncId: string | null
+  state: SyncState
+  lastErrorCode: string | null
+  lastErrorMessage: string | null
+  items: SyncStatusItem[]
+}
+
+export interface SyncStartResponse {
+  syncId: string
+  status: 'accepted'
+  message: string
+}
+
 export interface DailyActivity {
   date: string
   steps: number
@@ -148,4 +200,9 @@ export interface FitnessApi {
   getWorkoutDetail(workoutId: string): Promise<WorkoutDetail>
   getWorkoutSummary(range: SummaryRange, anchor: string): Promise<WorkoutSummary>
   getGoals(): Promise<Goal[]>
+  getSyncStatus(): Promise<SyncStatus>
+  startSync(options?: {
+    dataTypes?: string[]
+    full?: boolean
+  }): Promise<SyncStartResponse>
 }

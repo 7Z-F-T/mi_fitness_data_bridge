@@ -231,14 +231,14 @@ Use synthetic data only in issues, tests, documentation, and screenshots. Follow
 
 `frontend/` is a separate Vue 3 + TypeScript dashboard (pnpm-managed) with home, workout summary, and goals pages. It uses synthetic demo data by default.
 
-The bridge also ships a local read-only FastAPI service for the dashboard:
+The bridge also ships a local FastAPI service for the dashboard:
 
 ```bash
 pip install -e '.[web]'
 mi-fitness-bridge web --host 127.0.0.1 --port 8765
 ```
 
-It binds to `127.0.0.1` by default, returns JSON-only GET responses, opens SQLite in read-only mode, and never reads credentials. Point the frontend at it with `VITE_API_BASE_URL=http://127.0.0.1:8765/api`. See [docs/web-api.md](docs/web-api.md) and [frontend/README.md](frontend/README.md). Never deploy the dashboard or API publicly: the cache contains plaintext `user_id` and sensitive health records.
+Query endpoints are read-only; the explicit `POST /api/sync` action uses credentials already stored in the OS keyring and writes the local cache. The API never accepts credentials over HTTP. Sync runs are stored per dataset in `sync_runs` with timestamps, status, counts, source and error code; the dashboard's Sync panel shows them and starts an incremental sync by default. Point the frontend at the API with `VITE_API_BASE_URL=http://127.0.0.1:8765/api`. See [docs/web-api.md](docs/web-api.md) and [frontend/README.md](frontend/README.md). Never deploy the dashboard or API publicly: the cache contains plaintext `user_id` and sensitive health records.
 
 ## Privacy, provenance, and license
 
