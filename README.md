@@ -225,6 +225,18 @@ python -m ruff check src tests
 
 Issue、测试、文档和截图中只可使用合成数据。安全问题请遵循 [SECURITY.md](SECURITY.md)；发布步骤请见 [docs/release-checklist.md](docs/release-checklist.md)。
 
+## 本地 Web 分析页面（可选）
+
+`frontend/` 是一个独立的 Vue 3 + TypeScript 分析页面，按[设计手稿](docs/设计手稿.md)实现首页、运动总结和运动目标三个页面。它默认使用合成演示数据，只读取本地缓存，不会接收或上传凭证。
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+前端使用 pnpm 管理依赖（`package.json` 已固定 `packageManager`）。连接真实 SQLite 缓存需要本地只读 API，接口约定和安全边界详见 [frontend/README.md](frontend/README.md)。不要将该页面部署到公网。
+
 ## 隐私、来源与许可
 
 - 将 `passToken`、SQLite 数据库、导出文件和日志保密。

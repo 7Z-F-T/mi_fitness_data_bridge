@@ -20,6 +20,12 @@ python -m pytest -q -p no:cacheprovider
 python -m ruff check src tests
 ```
 
+## 前端项目（frontend/）
+
+- 技术栈：Vue 3 + TypeScript + Vite，使用 pnpm 管理依赖；命令：`cd frontend && pnpm install && pnpm build`。
+- 前端只读本地缓存或导出结果；**不得在浏览器中接收、存储或回传 passToken/user_id 凭证**。账户入口只说明 `mi-fitness-bridge setup` 并链接官方登录页，不抓取登录结果。
+- 默认使用合成演示数据并显示“演示数据”标识；连接真实数据需本地只读 API（仅监听 `127.0.0.1`），禁止公网部署，且不得引入遥测或第三方分析。
+
 ## 既有工作规则（原文保留）
 
 - Read `PROJECT_GUIDE.md` and `README.md` before work.
