@@ -13,4 +13,6 @@ Material changes in this repository include:
 
 The FDS workout-detail protocol module (`src/mi_fitness_mcp/adapters/fds.py`) is an independent implementation informed by the decompiled-APK protocol notes and MIT-licensed reference code of [kevinkwee/Mi-Fitness-Sync](https://github.com/kevinkwee/Mi-Fitness-Sync) (suffix construction, AES-CBC parameters, per-second record channel tables and GPS record layout). That project's MIT license terms are acknowledged here; no code was copied verbatim beyond protocol constants required for interoperability.
 
+The optional `.[coach]` extra installs the [Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python), which is distributed under the MIT license. Anthropic, Claude, OpenAI, DeepSeek, Qwen, Kimi, Ollama, and other provider names are trademarks of their respective owners; this project is not affiliated with or endorsed by them.
+
 No Xiaomi source code, logo, or official SDK is included. The cloud adapter is an unofficial community implementation.

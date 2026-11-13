@@ -8,11 +8,13 @@ import uuid
 
 from mi_fitness_mcp.adapters.mi_fitness_cloud import MiFitnessCloudAdapter
 from mi_fitness_mcp.auth import (
+    coach_llm_key_configured,
     keyring_backend_warning,
     load_mi_fitness_token,
     mask_account_id,
     save_mi_fitness_token,
 )
+from mi_fitness_mcp.coach.cli import interactive_coach_setup, register_coach_parser
 from mi_fitness_mcp.config import (
     Config,
     get_config_path,
@@ -90,9 +92,13 @@ def cmd_setup(args):
         print("❌ 必须提供 user_id 和 passToken")
         sys.exit(1)
     save_mi_fitness_token(user_id, pass_token)
-    config = Config(mode="mi_fitness_cloud", region=region)
+    config = load_config()
+    config.mode = "mi_fitness_cloud"
+    config.region = region
     save_config(config)
     print("✅ Mi Fitness 配置已保存！")
+    if getattr(args, "with_coach", False):
+        interactive_coach_setup(config)
 
 
 def cmd_doctor(args):
@@ -154,6 +160,37 @@ def cmd_doctor(args):
             print("✅ 数据库可用")
         else:
             print("ℹ️  数据库将在首次运行时创建")
+
+        print()
+        print("Coach（可选）：")
+        print(f"   启用： {'是' if config.coach.enabled else '否'}")
+        print(f"   供应商： {config.coach.llm.provider} / {config.coach.llm.model}")
+        key_state = "未启用 AI"
+        if config.coach.enabled:
+            key_state = (
+                "已配置"
+                if coach_llm_key_configured(config.coach.llm.provider)
+                else "未配置"
+            )
+        print(f"   API Key： {key_state}")
+        print(f"   远程同意： {config.coach.llm.remote_consent_at or '未记录'}")
+        import importlib.util
+
+        print(
+            "   Anthropic SDK： "
+            f"{'已安装' if importlib.util.find_spec('anthropic') else '未安装'}"
+        )
+        try:
+            from mi_fitness_mcp.storage.coach import CoachStore
+
+            store = CoachStore(Database(config.database_path))
+            print(f"   coach 表： {'可用' if store.schema_initialized() else '未初始化'}")
+            print(
+                f"   目标/计划： {store.count_goals()} / "
+                f"{len(store.list_plans(limit=500))}"
+            )
+        except Exception as exc:
+            print(f"   coach 状态读取失败： {exc}")
     except Exception as e:
         print(f"❌ 加载配置失败： {e}")
         sys.exit(1)
@@ -306,6 +343,11 @@ def main():
     setup_parser = subparsers.add_parser("setup", help="配置服务")
     setup_parser.add_argument("--mode", choices=["mi_fitness_cloud"], help="配置模式")
     setup_parser.add_argument("--region", help="云端区域")
+    setup_parser.add_argument(
+        "--with-coach",
+        action="store_true",
+        help="在 Mi Fitness 配置后继续配置可选的 AI coach",
+    )
 
     doctor_parser = subparsers.add_parser("doctor", help="检查配置并诊断问题")
     doctor_parser.add_argument("--db", help=db_help)
@@ -347,6 +389,8 @@ def main():
     )
     export_parser.add_argument("--db", help=db_help)
 
+    register_coach_parser(subparsers, db_help)
+
     args = parser.parse_args()
     if args.command == "serve" or args.command is None:
         asyncio.run(server_main(db_path=resolve_database_path(getattr(args, "db", None))))
@@ -366,6 +410,10 @@ def main():
         cmd_sync(args)
     elif args.command == "export":
         cmd_export(args)
+    elif args.command == "coach":
+        from mi_fitness_mcp.coach.cli import run_coach
+
+        run_coach(args)
     else:
         parser.print_help()
         sys.exit(1)

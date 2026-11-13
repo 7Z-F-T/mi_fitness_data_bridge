@@ -267,7 +267,7 @@ class QueryResponse(BaseModel):
     """Generic query response envelope."""
 
     status: Literal["ok", "error"] = "ok"
-    source: Literal["mi_fitness_cloud", "cloud_session", "cache", "unknown"]
+    source: Literal["mi_fitness_cloud", "cloud_session", "cache", "coach", "unknown"]
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None))
     timezone: str = "UTC"
     data: dict[str, Any] = Field(default_factory=dict)

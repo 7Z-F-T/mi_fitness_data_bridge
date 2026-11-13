@@ -1,6 +1,6 @@
 # Local Web API
 
-仅本机的 HTTP API，为 `frontend/` 数据看板提供真实 SQLite 缓存数据。查询接口只读；显式的 `POST /api/sync` 会使用本机钥匙串中已配置的凭证同步数据并写入本地缓存。
+仅本机的 HTTP API，为 `frontend/` 数据看板提供真实 SQLite 缓存数据。查询接口只读；显式的 `POST /api/sync` 会使用本机钥匙串中已配置的凭证同步数据并写入本地缓存。可选的 `POST /api/coach/*` 只写本地 coach 目标/计划/AI 元数据表，需要单独的确认头。
 
 > **Local-only and sensitive.** 返回内容包含健康数据。默认只监听 `127.0.0.1`，不要部署到公网，不要加托管代理或公网鉴权层。API 不需要、也不会在 HTTP 中接收 `passToken`；凭证仍只通过 `mi-fitness-bridge setup` 保存到系统钥匙串。
 
@@ -28,8 +28,8 @@ Web 依赖未安装。请运行：pip install -e '.[web]'
 
 | 项目 | 约定 |
 | --- | --- |
-| 方法 | 查询用 **GET**；本地同步用 **POST /api/sync**；PUT/PATCH/DELETE 返回 `405` |
-| 请求体 | GET 无请求体；`POST /api/sync` 使用 JSON |
+| 方法 | 查询用 **GET**；本地同步用 **POST /api/sync**；可选 coach 写操作用 **POST /api/coach/***；PUT/PATCH/DELETE 返回 `405` |
+| 请求体 | GET 无请求体；`POST` 使用 JSON |
 | 响应 | `application/json` |
 | 错误 | 统一 `{"error": {...}}` 信封 |
 | 请求追踪 | 响应头 `X-Request-ID`，也可由客户端传入 |
@@ -38,7 +38,7 @@ Web 依赖未安装。请运行：pip install -e '.[web]'
 | CORS | 默认允许 `127.0.0.1:5173`、`localhost:5173`、`127.0.0.1:4173`、`localhost:4173`；可用 `MI_FITNESS_WEB_CORS_ORIGINS` 覆盖 |
 
 > 浏览器 CORS 预检会使用 `OPTIONS`。
-> `POST /api/sync` 必须带 `X-Mi-Fitness-Confirm: sync` 自定义头；这会让浏览器先发 CORS 预检，防止任意网页通过简单表单触发本地同步。
+> `POST /api/sync` 必须带 `X-Mi-Fitness-Confirm: sync`，coach 写操作必须带 `X-Mi-Fitness-Confirm: coach`；这会让浏览器先发 CORS 预检，防止任意网页通过简单表单触发本地写入。
 
 ## 账号选择
 
@@ -175,7 +175,30 @@ MI_FITNESS_WEB_USER_ID=<数据库中的 user_id> mi-fitness-bridge web
 
 ### `GET /api/goals`
 
-目标页仍在规划中，当前返回 `[]`。
+旧版兼容占位接口，固定返回 `[]`。新目标页使用 `/api/coach/*`（见下）。
+
+### Coach API
+
+可选 coach 扩展提供本地目标、训练档案和训练计划：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/coach/status` | provider/model、key/consent、表是否初始化、目标/计划数 |
+| GET | `/api/coach/overview` | 训练档案摘要、目标进度、active 计划、规则建议 |
+| GET | `/api/coach/profile?format=local\|llm` | 本地档案或最小化 LLM payload 预览 |
+| GET | `/api/coach/goals` | 目标与进度 |
+| GET | `/api/coach/goals/{goal_id}` | 单个目标与进度 |
+| POST | `/api/coach/goals` | 创建目标 |
+| POST | `/api/coach/goals/{goal_id}` | 更新目标 |
+| POST | `/api/coach/goals/{goal_id}/archive` | 归档目标 |
+| POST | `/api/coach/recommendations` | 规则建议或显式 AI 建议 |
+| GET | `/api/coach/plans` | 计划列表 |
+| GET | `/api/coach/plans/{plan_id}` | 计划详情 |
+| POST | `/api/coach/plans/generate` | 生成本地模板或 AI 计划 |
+| POST | `/api/coach/plans/{plan_id}/activate` | 激活计划 |
+| POST | `/api/coach/plans/{plan_id}/archive` | 归档计划 |
+
+写操作必须带 `X-Mi-Fitness-Confirm: coach`。AI 调用还需要请求体中的 `consent=true` 和已记录的远程同意；远程同意只能通过交互式 `mi-fitness-bridge coach setup` 授予。响应不包含 `userId`、API key、prompt 或 response。详细说明见 [docs/coach.md](coach.md)。
 
 ### `GET /api/sync/status`
 
@@ -260,7 +283,13 @@ X-Mi-Fitness-Confirm: sync
 | 404 | `ROUTE_NOT_FOUND` | 接口路径不存在 |
 | 404 | `NO_DATA` | 数据库没有健康数据，或指定账号无数据 |
 | 403 | `SYNC_CONFIRMATION_REQUIRED` | `POST /api/sync` 缺少确认头 |
+| 403 | `COACH_CONFIRMATION_REQUIRED` | coach 写操作缺少 `X-Mi-Fitness-Confirm: coach` |
 | 405 | `METHOD_NOT_ALLOWED` | 接口不支持该请求方法 |
+| 404 | `GOAL_NOT_FOUND` / `PLAN_NOT_FOUND` | coach 目标或计划不存在 |
+| 409 | `COACH_NOT_INITIALIZED` | coach 表尚未创建 |
+| 409 | `COACH_DISABLED` | coach AI 未启用或未配置 |
+| 409 | `LLM_CONSENT_REQUIRED` | 缺少远程 AI 同意 |
+| 422 | `COACH_VALIDATION_FAILED` | coach 目标/计划未通过校验 |
 | 409 | `AMBIGUOUS_USER` | 数据库包含多个账号且未设置 `MI_FITNESS_WEB_USER_ID` |
 | 409 | `SYNC_IN_PROGRESS` | 网页同步任务仍在运行 |
 | 409 | `CREDENTIALS_MISSING` | 本机钥匙串中尚未配置小米凭证 |
@@ -319,13 +348,13 @@ pnpm dev
 - FastAPI / Pydantic 的依赖注入、响应模型、自动 OpenAPI；
 - 统一错误信封参考 RFC 7807 Problem Details 的结构，但保留 `error.code` 便于前端本地化；
 - 标准 HTTP 状态码、`X-Request-ID`、`Cache-Control: no-store`；
-- 只读 repository/service 分层；SQLite 以 `mode=ro` 打开，不执行 schema migration；
+- 查询使用只读 repository/service 分层；SQLite 以 `mode=ro` 打开，不执行 schema migration。coach 写请求使用短生命周期可写连接，只写 coach 表；
 - CORS 仅允许本地前端来源，不允许凭证模式。
 
 ## 限制
 
-- 这是单用户、本机 API，没有登录/鉴权；不要暴露到公网。查询只读；`POST /api/sync` 是唯一的写动作，且必须带确认头。
-- `goals` 还没有持久化实现，固定返回空列表。
+- 这是单用户、本机 API，没有登录/鉴权；不要暴露到公网。查询只读；`POST /api/sync` 和 `POST /api/coach/*` 是显式本机写动作，分别必须带 `X-Mi-Fitness-Confirm: sync|coach`。coach 写操作只改本地 coach 表。
+- 旧 `/api/goals` 固定返回空列表；新目标页使用 `/api/coach/*`。
 - 某些汇总字段取决于设备和上游数据，可能为 `null`。
 - `daily_activity` 的 `activeMinutes`、`floors`、`totalKcal` 当前适配器通常不填，因此多为 `null`。
 - 骑行踏频（通道 50）当前未被持久化；`workout_detail_samples.cadence` 表示跑步步频。

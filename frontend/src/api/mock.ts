@@ -1,6 +1,15 @@
 import dayjs from 'dayjs'
 import {
   SYNC_DATA_TYPES,
+  type CoachApi,
+  type CoachGoal,
+  type CoachGoalPayload,
+  type CoachPlan,
+  type CoachPlanSession,
+  type CoachPlanWeek,
+  type CoachProgress,
+  type CoachRecommendation,
+  type CoachStatus,
   type DailyActivity,
   type FitnessApi,
   type GpsPoint,
@@ -532,5 +541,282 @@ export const mockApi: FitnessApi = {
     return Promise.reject(
       new Error('演示数据模式不支持同步；请启动本地 API 后重试。'),
     )
+  },
+}
+
+const mockCoachStatus: CoachStatus = {
+  enabled: false,
+  language: 'zh-CN',
+  profileWeeks: 12,
+  defaultPlanWeeks: 8,
+  allowDeterministicFallback: true,
+  provider: 'anthropic',
+  model: 'claude-opus-5-5',
+  baseUrl: null,
+  keyConfigured: false,
+  anthropicExtraAvailable: false,
+  remoteConsentAt: null,
+  schemaInitialized: true,
+  goalCount: 1,
+  planCount: 1,
+  latestAiRun: null,
+}
+
+function demoProgress(goal: CoachGoal, current = 2): CoachProgress {
+  return {
+    goalId: goal.id,
+    status: current >= (goal.targetValue ?? 0) ? 'achieved' : 'ok',
+    currentValue: current,
+    targetValue: goal.targetValue,
+    unit: goal.targetUnit,
+    periodStart: dayjs().startOf('week').format('YYYY-MM-DD'),
+    periodEnd: dayjs().endOf('week').format('YYYY-MM-DD'),
+    daysElapsed: dayjs().day() === 0 ? 7 : dayjs().day(),
+    daysRemaining: dayjs().day() === 0 ? 0 : 7 - dayjs().day(),
+    expectedValue: (goal.targetValue ?? 0) * (dayjs().day() || 7) / 7,
+    completionRatio: goal.targetValue ? current / goal.targetValue : null,
+    onTrack: true,
+    dataQuality: { status: 'ok', caveats: ['演示数据不是真实健康记录。'] },
+    evidence: [`演示数据：本周已完成 ${current} 次训练`],
+    trend: [],
+  }
+}
+
+let mockCoachGoal: CoachGoal = {
+  id: 'demo-goal-1',
+  goalType: 'weekly_frequency',
+  sport: 'any',
+  title: '每周训练 3 次',
+  mode: 'target',
+  targetValue: 3,
+  baselineValue: 2.4,
+  targetUnit: 'sessions_per_week',
+  period: 'week',
+  startDate: dayjs().subtract(10, 'day').format('YYYY-MM-DD'),
+  targetDate: null,
+  raceDistance: null,
+  targetTimeSeconds: null,
+  availableDays: 4,
+  maxSessionsPerWeek: 4,
+  notes: null,
+  status: 'active',
+  achievedAt: null,
+  createdAt: dayjs().subtract(10, 'day').toISOString(),
+  updatedAt: dayjs().toISOString(),
+}
+
+let mockCoachPlan: CoachPlan = buildMockPlan(mockCoachGoal)
+
+function buildMockPlan(goal: CoachGoal): CoachPlan {
+  const start = dayjs().add((8 - dayjs().day()) % 7 || 7, 'day')
+  const session = (
+    offset: number,
+    type: string,
+    minutes: number,
+    description: string,
+  ): CoachPlanSession => ({
+    date: start.add(offset, 'day').format('YYYY-MM-DD'),
+    sport: goal.sport === 'any' ? 'running' : goal.sport,
+    session_type: type,
+    duration_minutes: minutes,
+    distance_m: type === 'long' ? 8000 : null,
+    intensity: type === 'easy' ? 'RPE 3-4，可完整说话' : 'RPE 6',
+    description,
+    purpose: '演示训练目的',
+    optional: false,
+  })
+  const weeks: CoachPlanWeek[] = [1, 2, 3, 4].map((weekIndex) => {
+    const weekStart = start.add((weekIndex - 1) * 7, 'day')
+    return {
+      week_index: weekIndex,
+      start_date: weekStart.format('YYYY-MM-DD'),
+      focus: weekIndex === 4 ? '恢复与有氧维持' : '稳定训练',
+      is_recovery_week: weekIndex === 4,
+      target_duration_minutes: weekIndex === 4 ? 120 : 180,
+      target_distance_m: weekIndex === 4 ? 6000 : 9000,
+      sessions: [
+        session((weekIndex - 1) * 7 + 1, 'tempo', 40, '热身 10 分钟，节奏跑 15 分钟，放松。'),
+        session((weekIndex - 1) * 7 + 3, 'easy', 35, '轻松有氧，保持可交谈强度。'),
+        session((weekIndex - 1) * 7 + 5, 'long', weekIndex === 4 ? 45 : 60, '轻松长距离，保持可短句交谈。'),
+      ],
+    }
+  })
+  return {
+    id: 'demo-plan-1',
+    goalId: goal.id,
+    status: 'active',
+    title: `${goal.title} · 训练计划`,
+    startDate: start.format('YYYY-MM-DD'),
+    endDate: start.add(27, 'day').format('YYYY-MM-DD'),
+    weeks: 4,
+    generatedBy: 'fallback',
+    provider: null,
+    model: null,
+    promptVersion: null,
+    schemaVersion: 'coach-plan-schema-v1',
+    aiRunId: null,
+    goalSnapshot: {},
+    plan: {
+      title: `${goal.title} · 训练计划`,
+      summary: '演示用 4 周计划，包含休息日和渐进负荷。',
+      weeks,
+      progression_rules: ['每周增幅不超过 10%。'],
+      weekly_habits: ['睡眠不足时降低强度。'],
+      safety: {
+        stop_rules: ['出现胸痛、眩晕或明显不适时立即停止。'],
+        disclaimer: '仅供运动参考，不构成医疗建议。',
+      },
+      assumptions: ['演示数据。'],
+      data_gaps: ['演示数据不是真实健康记录。'],
+    },
+    validationStatus: 'passed',
+    validationWarnings: [],
+    createdAt: dayjs().toISOString(),
+    updatedAt: dayjs().toISOString(),
+    activatedAt: dayjs().toISOString(),
+    archivedAt: null,
+  }
+}
+
+const mockRecommendation: CoachRecommendation = {
+  goalType: 'weekly_frequency',
+  sport: 'any',
+  title: '每周训练 3 次',
+  mode: 'target',
+  targetValue: 3,
+  baselineValue: 2.4,
+  targetUnit: 'sessions_per_week',
+  period: 'week',
+  startDate: dayjs().format('YYYY-MM-DD'),
+  targetDate: null,
+  raceDistance: null,
+  targetTimeSeconds: null,
+  rationale: '演示数据：近期平均每周 2.4 次，先保持可持续频率。',
+  evidence: ['demo=true'],
+  confidence: 'medium',
+  dataGaps: ['演示数据不是真实健康记录。'],
+  source: 'rule_based',
+}
+
+function defaultUnit(goalType: CoachGoalPayload['goalType']) {
+  return {
+    weekly_frequency: 'sessions_per_week',
+    weekly_duration: 'minutes_per_week',
+    race: 'seconds',
+    distance: 'meters',
+    body_composition: 'kg',
+  }[goalType] as CoachGoal['targetUnit']
+}
+
+export const mockCoachApi: CoachApi = {
+  getStatus() {
+    return delay(mockCoachStatus)
+  },
+  getOverview() {
+    return delay({
+      status: mockCoachStatus,
+      profile: { window: { weeks: 12 }, data_quality: { status: 'ok' } },
+      goals: [{ goal: mockCoachGoal, progress: demoProgress(mockCoachGoal) }],
+      plans: [mockCoachPlan],
+      recommendations: [mockRecommendation],
+      dataQuality: { status: 'ok' },
+    })
+  },
+  getProfile(_weeks, _goalId, format = 'local') {
+    if (format === 'llm') {
+      return delay({
+        payload: {
+          schema_version: 'coach-payload-v1',
+          window_weeks: 12,
+          weeks: [{ week_offset: 1, sessions: 3, duration_minutes: 180 }],
+        },
+      })
+    }
+    return delay({ profile: { window: { weeks: 12 }, data_quality: { status: 'ok' } } })
+  },
+  getGoals() {
+    return delay([{ goal: mockCoachGoal, progress: demoProgress(mockCoachGoal) }])
+  },
+  createGoal(payload: CoachGoalPayload) {
+    const now = dayjs().toISOString()
+    mockCoachGoal = {
+      id: `demo-goal-${Date.now()}`,
+      goalType: payload.goalType,
+      sport: payload.sport ?? 'any',
+      title: payload.title,
+      mode: payload.mode ?? 'target',
+      targetValue: payload.targetValue ?? null,
+      baselineValue: null,
+      targetUnit: payload.targetUnit ?? defaultUnit(payload.goalType),
+      period: payload.period ?? 'week',
+      startDate: payload.startDate ?? dayjs().format('YYYY-MM-DD'),
+      targetDate: payload.targetDate ?? null,
+      raceDistance: payload.raceDistance ?? null,
+      targetTimeSeconds: payload.targetTimeSeconds ?? null,
+      availableDays: payload.availableDays ?? null,
+      maxSessionsPerWeek: payload.maxSessionsPerWeek ?? null,
+      notes: payload.notes ?? null,
+      status: 'active',
+      achievedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    }
+    return delay({ goal: mockCoachGoal, progress: demoProgress(mockCoachGoal) })
+  },
+  updateGoal(_goalId: string, payload: Partial<CoachGoalPayload>) {
+    mockCoachGoal = {
+      ...mockCoachGoal,
+      ...payload,
+      targetUnit: payload.targetUnit ?? mockCoachGoal.targetUnit,
+      mode: payload.mode ?? mockCoachGoal.mode,
+      updatedAt: dayjs().toISOString(),
+    }
+    return delay({ goal: mockCoachGoal, progress: demoProgress(mockCoachGoal) })
+  },
+  archiveGoal() {
+    mockCoachGoal = { ...mockCoachGoal, status: 'archived', updatedAt: dayjs().toISOString() }
+    return delay(mockCoachGoal)
+  },
+  recommend() {
+    return delay([mockRecommendation])
+  },
+  getPlans(goalId?: string, status?: string) {
+    const plans = [mockCoachPlan].filter(
+      (plan) =>
+        (!goalId || plan.goalId === goalId) && (!status || plan.status === status),
+    )
+    return delay(plans)
+  },
+  getPlan(planId: string) {
+    if (planId !== mockCoachPlan.id) return Promise.reject(new Error('Plan not found'))
+    return delay(mockCoachPlan)
+  },
+  generatePlan(payload) {
+    mockCoachPlan = buildMockPlan(mockCoachGoal)
+    mockCoachPlan = {
+      ...mockCoachPlan,
+      id: `demo-plan-${Date.now()}`,
+      goalId: payload.goalId,
+      status: payload.activate ? 'active' : 'draft',
+    }
+    return delay(mockCoachPlan)
+  },
+  activatePlan(planId: string) {
+    mockCoachPlan = {
+      ...mockCoachPlan,
+      id: planId,
+      status: 'active',
+      activatedAt: dayjs().toISOString(),
+    }
+    return delay(mockCoachPlan)
+  },
+  archivePlan(planId: string) {
+    mockCoachPlan = {
+      ...mockCoachPlan,
+      id: planId,
+      status: 'archived',
+      archivedAt: dayjs().toISOString(),
+    }
+    return delay(mockCoachPlan)
   },
 }

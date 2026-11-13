@@ -9,6 +9,10 @@ logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "mi-fitness-mcp"
 ACCOUNT_NAME = "mi_fitness_auth"
+COACH_LLM_ACCOUNTS = {
+    "anthropic": "coach_llm_api_key_anthropic",
+    "openai_compatible": "coach_llm_api_key_openai_compatible",
+}
 
 # Module/class name fragments of keyring backends that store secrets weakly
 # or not at all (fail, null, keyrings.alt plaintext/file backends).
@@ -82,3 +86,44 @@ def delete_mi_fitness_token() -> None:
         pass
     except Exception as exc:
         logger.error("Failed to delete Mi Fitness passToken: %s", exc)
+
+
+def _coach_llm_account(provider: str) -> str:
+    try:
+        return COACH_LLM_ACCOUNTS[provider]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported coach LLM provider: {provider}") from exc
+
+
+def save_coach_llm_api_key(provider: str, api_key: str) -> None:
+    """Store an optional coach provider key in the OS keyring.
+
+    The key is never written to config.json, CLI arguments, MCP arguments,
+    HTTP responses, logs, or environment-variable fallbacks.
+    """
+    account = _coach_llm_account(provider)
+    keyring.set_password(SERVICE_NAME, account, api_key)
+
+
+def load_coach_llm_api_key(provider: str) -> str | None:
+    account = _coach_llm_account(provider)
+    try:
+        return keyring.get_password(SERVICE_NAME, account)
+    except Exception as exc:
+        # Never include the secret value; the provider name is enough for diagnosis.
+        logger.error("Failed to load coach LLM key for %s: %s", provider, exc)
+        return None
+
+
+def coach_llm_key_configured(provider: str) -> bool:
+    return bool(load_coach_llm_api_key(provider))
+
+
+def delete_coach_llm_api_key(provider: str) -> None:
+    account = _coach_llm_account(provider)
+    try:
+        keyring.delete_password(SERVICE_NAME, account)
+    except keyring.errors.PasswordDeleteError:
+        pass
+    except Exception as exc:
+        logger.error("Failed to delete coach LLM key for %s: %s", provider, exc)

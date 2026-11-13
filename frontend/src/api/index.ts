@@ -1,6 +1,6 @@
-import type { FitnessApi } from './types'
-import { mockApi } from './mock'
-import { createHttpApi } from './http'
+import type { CoachApi, FitnessApi } from './types'
+import { mockApi, mockCoachApi } from './mock'
+import { createCoachHttpApi, createHttpApi } from './http'
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
 
@@ -11,3 +11,4 @@ const baseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
 export const isMockApi = !baseUrl
 
 export const api: FitnessApi = baseUrl ? createHttpApi(baseUrl) : mockApi
+export const coachApi: CoachApi = baseUrl ? createCoachHttpApi(baseUrl) : mockCoachApi

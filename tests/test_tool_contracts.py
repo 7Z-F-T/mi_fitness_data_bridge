@@ -32,6 +32,18 @@ EXAMPLES = {
     "query_stress": {**DATE_RANGE, "level": "low"},
     "query_abnormal_heart_beat": DATE_RANGE,
     "get_data_coverage": {"data_types": ["sleep"]},
+    "coach_get_overview": {"weeks": 12},
+    "coach_recommend_goals": {"weeks": 12, "use_llm": False},
+    "coach_save_goal": {
+        "goal_type": "weekly_frequency",
+        "title": "每周训练 3 次",
+        "target_value": 3,
+        "target_unit": "sessions_per_week",
+        "period": "week",
+        "start_date": "2026-01-05",
+    },
+    "coach_get_plan": {"goal_id": "synthetic-goal"},
+    "coach_generate_plan": {"goal_id": "synthetic-goal", "use_llm": False},
 }
 
 
@@ -43,7 +55,7 @@ async def test_wire_catalog_preserves_names_and_documents_every_parameter():
     # Exercise actual SDK serialization, not just Python metadata constants.
     tools = json.loads(result.model_dump_json(by_alias=True))["tools"]
     assert {tool["name"] for tool in tools} == set(EXAMPLES)
-    assert len(tools) == 18
+    assert len(tools) == 23
     for tool in tools:
         name = tool["name"]
         schema = tool["inputSchema"]
@@ -57,9 +69,21 @@ async def test_wire_catalog_preserves_names_and_documents_every_parameter():
             if "default" in prop:
                 Draft202012Validator(prop).validate(prop["default"])
         annotations = tool["annotations"]
-        cloud = name in {"sync_data", "get_connection_status"}
-        assert annotations["openWorldHint"] is cloud
-        assert annotations["readOnlyHint"] is (not cloud and name != "cancel_sync")
+        open_world = name in {
+            "sync_data",
+            "get_connection_status",
+            "coach_recommend_goals",
+            "coach_generate_plan",
+        }
+        non_read_only = name in {
+            "sync_data",
+            "get_connection_status",
+            "cancel_sync",
+            "coach_save_goal",
+            "coach_generate_plan",
+        }
+        assert annotations["openWorldHint"] is open_world
+        assert annotations["readOnlyHint"] is (not non_read_only)
         assert annotations["destructiveHint"] is False
     assert "credentials" in server.app.instructions
     assert "consent" in server.app.instructions
@@ -82,6 +106,12 @@ async def test_wire_catalog_preserves_names_and_documents_every_parameter():
         ("workout_series", {"workout_id": "synthetic", "reference_max_hr": 0}),
         ("get_sync_status", {"sync_id": ""}),
         ("query_metric_series", {**DATE_RANGE, "metric": "invented"}),
+        ("coach_get_overview", {"weeks": 3}),
+        ("coach_get_plan", {"plan_id": "synthetic", "extra": True}),
+        ("coach_save_goal", {"goal_type": "invented"}),
+        ("coach_save_goal", {"title": "synthetic", "extra": True}),
+        ("coach_recommend_goals", {"use_llm": "yes"}),
+        ("coach_generate_plan", {"goal_id": "synthetic", "weeks": 2}),
     ],
 )
 async def test_sdk_rejects_invalid_arguments_before_dispatch(name, arguments, monkeypatch):
@@ -161,7 +191,7 @@ async def test_cache_response_shapes_match_documentation(name, keys, tmp_path, m
 @pytest.mark.asyncio
 async def test_documented_catalog_and_pagination_are_current():
     tools = await server.list_tools()
-    assert len(tools) == 18
+    assert len(tools) == 23
     root = Path(__file__).resolve().parents[1]
     for filename in ("README.md", "README.en.md", "docs/mcp-tool-contracts.md"):
         document = (root / filename).read_text(encoding="utf-8")

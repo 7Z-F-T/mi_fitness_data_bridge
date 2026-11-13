@@ -48,13 +48,15 @@ Daily-activity steps are aggregated by local minute. When a phone, band, or watc
 
 ## Project boundary
 
-This repository is a data connector and local-data foundation. It deliberately does **not** provide:
+**The core bridge does not coach.** It deliberately does **not** provide:
 
-- Medical diagnosis, treatment, coaching, or weight-loss advice.
+- Medical diagnosis, treatment, prescriptions, or weight-loss advice.
 - Hosted accounts, shared credentials, public token proxies, or multi-user cloud services.
 - A hosted or multi-user web dashboard, third-party fitness OAuth/webhooks, or meal-photo analysis.
 
-The optional local-only, read-only dashboard/API (`frontend/` and `src/mi_fitness_mcp/web/`) serves the user's own local cache and is not a hosted service.
+The optional local coach extension (`.[coach]`, off by default) adds goals, a training profile, and training plans. AI runs only after explicit user configuration and consent; it receives a minimized weekly summary without account IDs, device IDs, GPS, raw samples, or exact timestamps. It provides no medical advice or diet prescriptions and does not change core sync/export/query behavior.
+
+The optional local dashboard/API (`frontend/` and `src/mi_fitness_mcp/web/`) serves the user's own local cache and is not a hosted service.
 
 Downstream projects should install this package or consume its local exports instead of copying the connector source.
 
@@ -174,7 +176,7 @@ mi-fitness-bridge serve
 mi-fitness-mcp serve
 ```
 
-Available tools are `get_connection_status`, `sync_data`, `get_sync_status`, `cancel_sync`, `query_sync_history`, `get_profile`, `query_daily_activity`, `query_metric_series`, `get_data_coverage`, `query_body_measurements`, `query_sleep`, `query_workouts`, `query_workout_series`, `workout_detail_series`, `query_heart_rate`, `query_spo2`, `query_stress`, and `query_abnormal_heart_beat`. The legacy names `get_daily_summary` and `workout_series` remain callable for compatibility but are not advertised in the tool catalog.
+Available tools are `get_connection_status`, `sync_data`, `get_sync_status`, `cancel_sync`, `query_sync_history`, `get_profile`, `query_daily_activity`, `query_metric_series`, `get_data_coverage`, `query_body_measurements`, `query_sleep`, `query_workouts`, `query_workout_series`, `workout_detail_series`, `query_heart_rate`, `query_spo2`, `query_stress`, `query_abnormal_heart_beat`, plus the optional coach tools `coach_get_overview`, `coach_recommend_goals`, `coach_save_goal`, `coach_get_plan`, and `coach_generate_plan`. The legacy names `get_daily_summary` and `workout_series` remain callable for compatibility but are not advertised in the tool catalog.
 
 Record-list queries support `limit`/`offset` pagination; `data.pagination.next_offset` indicates the next page. Keep filters unchanged and do not sync between pages. Use `query_workout_series` with `max_points` for a single workout curve instead of list pagination. Background MCP syncs can be stopped with `cancel_sync`; already committed records are preserved. Job statuses are stored in local SQLite and remain accessible after restarting through `get_sync_status` or `query_sync_history`. The journal keeps the latest 500 terminal MCP jobs plus active jobs, excludes CLI syncs, and marks unfinished jobs as `interrupted` on restart rather than automatically resuming them. Only one MCP server may use a given database at a time.
 
@@ -213,9 +215,10 @@ The repository includes a demo that uses no network access or real account:
 
 ```bash
 python examples/synthetic_demo.py
+python examples/coach_synthetic_demo.py
 ```
 
-It creates a temporary SQLite database with synthetic records and runs the real JSON/CSV export pipeline. Use it to verify the local export path or prepare privacy-safe bug reports.
+The first script creates a temporary SQLite database with synthetic records and runs the real JSON/CSV export pipeline. The second seeds eight synthetic training weeks, builds a profile, creates a local goal, and generates/validates a template plan. Neither uses the network, a real account, the keyring, or an LLM. Use them to verify local paths or prepare privacy-safe bug reports.
 
 ## Development
 
@@ -238,13 +241,28 @@ pip install -e '.[web]'
 mi-fitness-bridge web --host 127.0.0.1 --port 8765
 ```
 
-Query endpoints are read-only; the explicit `POST /api/sync` action uses credentials already stored in the OS keyring and writes the local cache. The API never accepts credentials over HTTP. Sync runs are stored per dataset in `sync_runs` with timestamps, status, counts, source and error code; the dashboard's Sync panel shows them and starts an incremental sync by default. Point the frontend at the API with `VITE_API_BASE_URL=http://127.0.0.1:8765/api`. See [docs/web-api.md](docs/web-api.md) and [frontend/README.md](frontend/README.md). Never deploy the dashboard or API publicly: the cache contains plaintext `user_id` and sensitive health records.
+Query endpoints are read-only; the explicit `POST /api/sync` action uses credentials already stored in the OS keyring and writes the local cache. Optional `POST /api/coach/*` endpoints write only local coach tables and require the `X-Mi-Fitness-Confirm: coach` header; AI calls require separate consent. The API never accepts credentials over HTTP. Sync runs are stored per dataset in `sync_runs` with timestamps, status, counts, source and error code; the dashboard's Sync panel shows them and starts an incremental sync by default. Point the frontend at the API with `VITE_API_BASE_URL=http://127.0.0.1:8765/api`. See [docs/web-api.md](docs/web-api.md), [docs/coach.md](docs/coach.md), and [frontend/README.md](frontend/README.md). Never deploy the dashboard or API publicly: the cache contains plaintext `user_id` and sensitive health records.
+
+### Optional coach (goals and AI training plans)
+
+```bash
+pip install -e '.[coach,web]'
+mi-fitness-bridge coach setup          # interactive provider/model/key/remote consent
+mi-fitness-bridge coach status
+mi-fitness-bridge coach profile --weeks 12 --json
+mi-fitness-bridge coach goals add --type weekly_frequency --title 'Train 3x per week' \
+  --target 3 --unit sessions_per_week --start-date 2026-01-01
+mi-fitness-bridge coach plan --goal <goal_id> --generate --fallback --activate
+```
+
+Local goals, profiles, and deterministic template plans work without an LLM. Run `mi-fitness-bridge coach status` once to initialize the local coach tables. Remote-LLM consent is recorded only by the interactive `coach setup`; the web page shows the exact minimized payload and directs you there. API keys stay in the OS keyring and never enter `config.json`, CLI arguments, MCP arguments, or HTTP. See [docs/coach.md](docs/coach.md).
 
 ## Privacy, provenance, and license
 
 - Keep `passToken`s, SQLite databases, exports, and logs private.
 - Do not commit real health data or screenshots that contain personal metrics.
 - Health data returned by `query_*` MCP tools flows through the MCP client you use. Run the server only through a local stdio client, never through a remote or hosted proxy.
+- Optional coach AI calls send only a minimized weekly summary; API keys stay in the OS keyring and remote consent is recorded only by interactive `coach setup`. AI output is not medical advice.
 - This software is for personal data access and engineering research, not diagnosis or treatment.
 - See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for upstream provenance and MIT attribution.
 

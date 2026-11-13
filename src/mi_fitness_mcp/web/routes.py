@@ -170,8 +170,11 @@ def workout_detail(
 @router.get(
     "/goals",
     response_model=list[Goal],
-    summary="运动目标",
-    description="目标功能尚在规划中，当前返回空列表。",
+    summary="运动目标（兼容占位）",
+    description=(
+        "旧版目标接口，当前返回空列表。新目标页请使用 /api/coach/*，"
+        "详见 docs/coach.md。"
+    ),
     tags=["goals"],
     responses=COMMON_RESPONSES,
 )

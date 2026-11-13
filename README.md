@@ -48,13 +48,15 @@
 
 ## 项目边界
 
-这是数据连接器和本地数据基础设施，明确**不提供**：
+**核心桥接器不提供教练或医疗建议。** 它明确不提供：
 
-- 医疗诊断、治疗、健康教练或减重建议；
+- 医疗诊断、治疗、处方或减重建议；
 - 托管账户、共享凭证、公开 Token 代理或多用户云服务；
 - 托管/多用户 Web 仪表盘、第三方健身 OAuth/Webhook 或餐食照片分析。
 
-可选的本地只读分析页面与 API（`frontend/`、`src/mi_fitness_mcp/web/`）只服务本人本机缓存，不属于上述托管服务。
+可选的本地 coach 扩展（`.[coach]`，默认关闭）增加目标、训练档案和训练计划；AI 只在用户显式配置并同意后调用，只发送最小化的周聚合摘要，不发送账号、设备、GPS、原始样本或精确时间戳。它不提供医疗建议或饮食处方，不改变核心同步/导出/查询行为。
+
+可选的本地分析页面与 API（`frontend/`、`src/mi_fitness_mcp/web/`）只服务本人本机缓存，不属于上述托管服务。
 
 下游项目应安装本包或消费本地导出结果，而不是复制连接器源码。
 
@@ -174,7 +176,7 @@ mi-fitness-bridge serve
 mi-fitness-mcp serve
 ```
 
-可用工具包括：`get_connection_status`、`sync_data`、`get_sync_status`、`cancel_sync`、`query_sync_history`、`get_profile`、`query_daily_activity`、`query_metric_series`、`get_data_coverage`、`query_body_measurements`、`query_sleep`、`query_workouts`、`query_workout_series`、`workout_detail_series`、`query_heart_rate`、`query_spo2`、`query_stress` 和 `query_abnormal_heart_beat`。旧名称 `get_daily_summary` 和 `workout_series` 仍可作为兼容调用，但不会出现在工具目录中。
+可用工具包括：`get_connection_status`、`sync_data`、`get_sync_status`、`cancel_sync`、`query_sync_history`、`get_profile`、`query_daily_activity`、`query_metric_series`、`get_data_coverage`、`query_body_measurements`、`query_sleep`、`query_workouts`、`query_workout_series`、`workout_detail_series`、`query_heart_rate`、`query_spo2`、`query_stress`、`query_abnormal_heart_beat`，以及可选 coach 扩展的 `coach_get_overview`、`coach_recommend_goals`、`coach_save_goal`、`coach_get_plan` 和 `coach_generate_plan`。旧名称 `get_daily_summary` 和 `workout_series` 仍可作为兼容调用，但不会出现在工具目录中。
 
 记录列表查询支持 `limit`/`offset` 分页，响应中的 `data.pagination.next_offset` 为下一页位置；翻页时保持筛选条件不变，且不要执行同步。单次运动曲线使用 `query_workout_series` 的 `max_points` 控制点数，不使用列表分页。后台 MCP 同步可用 `cancel_sync` 停止，已写入的记录不会回滚。任务状态保存在本地 SQLite 中，重启后可用 `get_sync_status` 或 `query_sync_history` 查询；保留最近 500 个终态 MCP 任务及活动任务，不包含 CLI 同步。重启时未完成任务会标记为 `interrupted`，不会自动续跑。同一数据库同时只允许一个 MCP 服务进程使用。
 
@@ -213,9 +215,10 @@ from mi_fitness_mcp.adapters.mi_fitness_cloud import MiFitnessCloudAdapter
 
 ```bash
 python examples/synthetic_demo.py
+python examples/coach_synthetic_demo.py
 ```
 
-它会创建临时 SQLite 数据库、写入合成记录，并运行真实的 JSON/CSV 导出流程。可用于验证本地导出路径，或准备不泄露隐私的 Bug 报告。
+第一个脚本创建临时 SQLite 数据库、写入合成记录，并运行真实的 JSON/CSV 导出流程。第二个脚本生成 8 周合成训练历史，构建训练档案、创建本地目标并生成/校验模板训练计划；两者都不访问网络、真实账户、keyring 或 LLM。可用于验证本地路径，或准备不泄露隐私的 Bug 报告。
 
 ## 开发
 
@@ -229,7 +232,7 @@ Issue、测试、文档和截图中只可使用合成数据。安全问题请遵
 
 ## 本地 Web 分析页面（可选）
 
-`frontend/` 是一个独立的 Vue 3 + TypeScript 分析页面，按[设计手稿](docs/设计手稿.md)实现首页、运动总结和运动目标三个页面。它默认使用合成演示数据；连接本地 API 后，顶部“同步”入口可查看各分类的最近同步时间/结果，并触发增量同步。
+`frontend/` 是一个独立的 Vue 3 + TypeScript 分析页面，按[设计手稿](docs/设计手稿.md)实现首页、运动总结和目标/教练三个页面。它默认使用合成演示数据；连接本地 API 后，顶部“同步”入口可查看各分类的最近同步时间/结果，并触发增量同步。
 
 ```bash
 cd frontend
@@ -244,17 +247,35 @@ pip install -e '.[web]'
 mi-fitness-bridge web --host 127.0.0.1 --port 8765
 ```
 
-- 查询接口只读（SQLite `mode=ro`）；`POST /api/sync` 是唯一的写动作，使用本机钥匙串中已配置的凭证，需要 `X-Mi-Fitness-Confirm: sync` 确认头，会写入本地缓存并联系小米云。API 不在 HTTP 中接收任何凭证。
+- 查询接口只读（SQLite `mode=ro`）；`POST /api/sync` 使用本机钥匙串中已配置的凭证，需要 `X-Mi-Fitness-Confirm: sync` 确认头，会写入本地缓存并联系小米云。可选的 `POST /api/coach/*` 只写本地 coach 表，需要 `X-Mi-Fitness-Confirm: coach` 确认头；AI 调用还需要单独同意。API 不在 HTTP 中接收任何凭证。
 - 同步记录写入 `sync_runs` 表：分类、开始/结束时间、成功/部分/失败、计数、来源和错误码。CLI 不传日期默认按水位增量同步，`--full` 忽略水位。
 - 前端配置 `VITE_API_BASE_URL=http://127.0.0.1:8765/api` 即可切换为真实数据。
 - 接口、标准状态码、统一错误信封和账号选择规则详见 [docs/web-api.md](docs/web-api.md)；前端契约见 [frontend/README.md](frontend/README.md)。
 - 不要将页面或 API 部署到公网。数据库包含明文 `user_id` 和健康数据。
+
+### 可选 coach（目标与 AI 训练计划）
+
+```bash
+pip install -e '.[coach,web]'
+mi-fitness-bridge coach setup          # 交互式配置 provider / model / key / 远程同意
+mi-fitness-bridge coach status
+mi-fitness-bridge coach profile --weeks 12 --json
+mi-fitness-bridge coach goals add --type weekly_frequency --title '每周训练 3 次' \
+  --target 3 --unit sessions_per_week --start-date 2026-01-01
+mi-fitness-bridge coach plan --goal <goal_id> --generate --fallback --activate
+```
+
+- 不配置 LLM 也能使用本地目标、训练档案和确定性模板计划。首次使用先运行 `mi-fitness-bridge coach status` 初始化本地 coach 表。
+- 远程 LLM 的首次同意只在交互式 `coach setup` 中记录；Web 页面会展示精确的最小化 payload 并引导。
+- API key 只存系统钥匙串，不进入 `config.json`、命令行、MCP 参数或 HTTP。
+- 详见 [docs/coach.md](docs/coach.md)。
 
 ## 隐私、来源与许可
 
 - 将 `passToken`、SQLite 数据库、导出文件和日志保密。
 - 不要提交真实健康数据，或包含个人指标的截图。
 - `query_*` MCP 工具返回的健康数据会流入你使用的 MCP 客户端；仅限本机 stdio 客户端使用，切勿接入远程或托管代理。
+- 可选 coach 的远程 AI 调用只发送最小化周聚合；API key 存钥匙串，远程同意只在交互式 `coach setup` 中记录。AI 输出不构成医疗建议。
 - 本软件仅用于个人数据访问和工程研究，不用于诊断或治疗。
 - 上游来源和 MIT 归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 

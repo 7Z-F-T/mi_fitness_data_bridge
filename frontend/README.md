@@ -12,7 +12,7 @@ Local-first web dashboard for the data exported by **mi-fitness-data-bridge**.
 | --- | --- | --- |
 | `/` | 首页 / Home | Today's steps, active calories, sleep stages and score, heart-rate curve, 7-day steps, recent workouts with a detail drawer |
 | `/summary` | 运动总结 / Workouts | Day/week/month/year switch, KPI cards, training trend, activity mix, workout list |
-| `/goals` | 运动目标 / Goals | Planned goals page (daily steps, weekly workouts, sleep consistency) |
+| `/goals` | 目标与教练 / Goals & coach | Local goals, deterministic training profile, AI goal suggestions, and training plans |
 
 The detail drawer shows per-second heart rate, pace/cadence or speed, altitude,
 and a GPS route preview. The route is plotted as an SVG path with no external map
@@ -88,7 +88,13 @@ Paths below are relative to `VITE_API_BASE_URL` (for example
 | `GET /workouts?limit=20` | `Workout[]` |
 | `GET /workouts/{workoutId}` | `WorkoutDetail` (`workout`, `samples`, `gps`) |
 | `GET /workouts/summary?range=day\|week\|month\|year&anchor=YYYY-MM-DD` | `WorkoutSummary` (buckets, totals, type mix, workouts) |
-| `GET /goals` | `Goal[]` (currently `[]`) |
+| `GET /goals` | Legacy `Goal[]` placeholder (currently `[]`) |
+| `GET /coach/status` | `CoachStatus` (AI/provider key/consent/schema state) |
+| `GET /coach/overview?weeks=12` | `CoachOverview` (profile, goals, plans, suggestions) |
+| `GET /coach/profile?format=local\|llm` | Local profile or minimized LLM payload preview |
+| `GET/POST /coach/goals...` | Goal list/detail/create/update/archive; writes need `X-Mi-Fitness-Confirm: coach` |
+| `GET/POST /coach/plans...` | Plan list/detail/generate/activate/archive; writes need the coach confirmation header |
+| `POST /coach/recommendations` | Rule suggestions, or AI suggestions with `useLlm` + `consent` |
 | `GET /sync/status` | `SyncStatus` (active state + per-dataset last status/counts/source) |
 | `POST /sync` | `SyncStartResponse`; headers `Content-Type: application/json`, `X-Mi-Fitness-Confirm: sync`; body `{dataTypes?, full?}`; starts a background sync |
 
@@ -121,10 +127,15 @@ Aggregation notes:
   `mi-fitness-bridge setup`.
 - The account dialog in this UI is informational. It links to the official Xiaomi
   sign-in page but does not capture the login result.
-- No telemetry, analytics, external fonts, map tiles, or third-party APIs are used.
+- No telemetry, analytics, external fonts, map tiles, or third-party APIs are used by the browser. The optional coach backend may call a user-configured LLM after explicit consent; the browser never receives the key.
+- Coach AI is off by default. Configure it only in the terminal with
+  `mi-fitness-bridge coach setup`; the web page shows the minimized payload and
+  directs you there when remote consent is missing.
+- Goals, plans, and the training profile stay in local SQLite. The UI never
+  renders `userId`, raw GPS, API keys, prompts, or model responses.
 
 ## Design reference
 
-See [`../docs/设计手稿.md`](../docs/设计手稿.md). The current implementation covers
-the three planned pages; the goals page is intentionally a placeholder for the
-next iteration.
+See [`../docs/设计手稿.md`](../docs/设计手稿.md) and [`../docs/coach.md`](../docs/coach.md).
+The goals page now covers local goals, deterministic recommendations, and
+training plans; AI suggestions remain optional.

@@ -43,7 +43,7 @@ Do **not** attach database files, raw responses, credentials, private logs or he
 
 ## Privacy / 隐私
 
-Local storage and local stdio do not guarantee that an AI client/model runs offline. Query results may be forwarded by the client. Review that flow separately; do not connect this bridge to a remote or hosted proxy. Export files can include a plaintext `user_id` and must be kept private. See [SECURITY.md](../SECURITY.md).
+Local storage and local stdio do not guarantee that an AI client/model runs offline. Query results may be forwarded by the client. Review that flow separately; do not connect this bridge to a remote or hosted proxy. Export files can include a plaintext `user_id` and must be kept private. The optional coach extension adds a separate, explicitly configured LLM path; remote consent and the minimized payload are documented in [docs/coach.md](coach.md). A local Ollama endpoint avoids remote health-data egress but still produces AI output that must be reviewed. See [SECURITY.md](../SECURITY.md).
 
 ## Sleep-score fallback / 睡眠评分补取（2026-09-21）
 

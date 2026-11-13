@@ -98,3 +98,57 @@ class InvalidDataTypesError(ApiError):
     status_code = 422
     code = "INVALID_DATA_TYPES"
     message = "包含不支持的数据类型，请检查后重试。"
+
+
+class CoachConfirmationError(ApiError):
+    status_code = 403
+    code = "COACH_CONFIRMATION_REQUIRED"
+    message = "缺少 coach 确认头，请从本地目标页发起操作。"
+
+
+class CoachNotInitializedError(ApiError):
+    status_code = 409
+    code = "COACH_NOT_INITIALIZED"
+    message = (
+        "coach 数据表尚未初始化。请先运行一次 coach 命令，例如 "
+        "`mi-fitness-bridge coach status`。"
+    )
+
+
+class CoachDisabledError(ApiError):
+    status_code = 409
+    code = "COACH_DISABLED"
+    message = "coach AI 未启用，请先在终端运行 `mi-fitness-bridge coach setup`。"
+
+
+class CoachGoalNotFoundError(ApiError):
+    status_code = 404
+    code = "GOAL_NOT_FOUND"
+    message = "没有找到该运动目标。"
+
+
+class CoachPlanNotFoundError(ApiError):
+    status_code = 404
+    code = "PLAN_NOT_FOUND"
+    message = "没有找到该训练计划。"
+
+
+class CoachValidationError(ApiError):
+    status_code = 422
+    code = "COACH_VALIDATION_FAILED"
+    message = "目标或计划未通过校验，请检查输入。"
+
+
+class CoachLLMError(ApiError):
+    status_code = 502
+    code = "LLM_UNAVAILABLE"
+    message = "AI 服务暂时不可用，请稍后重试。"
+
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        code: str | None = None,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message, code=code, status_code=status_code)

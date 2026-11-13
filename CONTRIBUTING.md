@@ -6,9 +6,10 @@ Before submitting:
 
 1. Use synthetic fixtures only.
 2. Do not include passTokens, user IDs, databases, raw personal responses, or screenshots with personal health values.
-3. Keep the connector generic; fat-loss or product-specific analytics belong in downstream applications.
+3. Keep the core connector generic; fat-loss or product-specific analytics belong in downstream applications. The optional `coach` extension may include training goals/plans only under the safety, consent, and keyring rules in `docs/coach.md`.
 4. Preserve unofficial/non-affiliation notices and upstream MIT attribution.
-5. Run:
+5. Coach provider tests must use fake clients or `respx`; never call a real model or include real health data.
+6. Run:
 
 ```bash
 python -m pytest -q -p no:cacheprovider

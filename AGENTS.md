@@ -4,12 +4,12 @@
 
 ## 项目定位
 
-本地优先（local-first）的小米运动健康（Mi Fitness）数据桥接工具：通过非官方/实验性的小米云端适配器读取**用户本人**的健康数据，落本地 SQLite，导出 JSON/CSV 或暴露为 MCP 查询工具。明确不做医疗建议、托管账号访问、多用户云服务。
+本地优先（local-first）的小米运动健康（Mi Fitness）数据桥接工具：通过非官方/实验性的小米云端适配器读取**用户本人**的健康数据，落本地 SQLite，导出 JSON/CSV 或暴露为 MCP 查询工具。核心桥接不做教练或医疗建议、不做托管账号访问、不做多用户云服务。可选的 `coach` 扩展（`.[coach]`，默认关闭）提供本地目标、训练档案和训练计划；AI 只在显式配置和同意后调用，不改变核心默认行为。
 
 ## 技术栈
 
 - Python ≥ 3.11，hatchling 构建，src 布局 `src/mi_fitness_mcp/`
-- 依赖：`mcp>=1.12,<2.0`、`pydantic>=2`、`httpx>=0.27`、`platformdirs`、`keyring>=25`（CLI 用 argparse 实现，无 click/rich）
+- 依赖：`mcp>=1.12,<2.0`、`pydantic>=2`、`httpx>=0.27`、`platformdirs`、`keyring>=25`（CLI 用 argparse 实现，无 click/rich）；可选 `.[coach]` 额外安装 Anthropic SDK，OpenAI 兼容接口复用 `httpx`。
 - 测试：pytest + pytest-asyncio + respx（HTTP mock）；lint：ruff（line-length 100，select E/F/I/N/W/UP/B/C4/SIM，忽略 E501）
 
 ## 常用命令
@@ -19,19 +19,21 @@ pip install -e '.[dev]'
 pip install -e '.[web]'
 python -m pytest -q -p no:cacheprovider
 python -m ruff check src tests
+python examples/coach_synthetic_demo.py
 mi-fitness-bridge web --host 127.0.0.1 --port 8765
+mi-fitness-bridge coach status
 ```
 
 ## 前端项目（frontend/）
 
 - 技术栈：Vue 3 + TypeScript + Vite，使用 pnpm 管理依赖；命令：`cd frontend && pnpm install && pnpm build`。
 - 前端只读本地缓存或导出结果；**不得在浏览器中接收、存储或回传 passToken/user_id 凭证**。账户入口只说明 `mi-fitness-bridge setup` 并链接官方登录页，不抓取登录结果。
-- 默认使用合成演示数据并显示“演示数据”标识；连接真实数据需本地 API（查询只读，同步入口为显式 POST；仅监听 `127.0.0.1`），禁止公网部署，且不得引入遥测或第三方分析。
+- 默认使用合成演示数据并显示“演示数据”标识；连接真实数据需本地 API（查询只读；同步和 coach 写入口均为显式 POST，分别要求 `X-Mi-Fitness-Confirm: sync|coach`；仅监听 `127.0.0.1`），禁止公网部署，且不得引入遥测或第三方分析。
 
 ## 本地 Web API（src/mi_fitness_mcp/web/）
 
-- API 只用于本机数据看板：默认 `127.0.0.1:8765`。查询接口仅 GET；同步入口仅 `POST /api/sync`，必须带 `X-Mi-Fitness-Confirm: sync`；PUT/PATCH/DELETE 一律 405，OPTIONS 仅用于本地 CORS 预检。禁止公网部署、托管代理或多用户服务。
-- 查询服务必须以 `Database(..., read_only=True)` / `mode=ro` 打开，不得调用写方法或修改缓存。唯一的例外是显式同步动作：它可以创建可写 `Database` 并调用 `SyncService`，但必须使用钥匙串中已有的凭证，不得在 HTTP 请求/响应/日志中接收或回显 passToken。
+- API 只用于本机数据看板：默认 `127.0.0.1:8765`。查询接口仅 GET；同步入口为 `POST /api/sync`，必须带 `X-Mi-Fitness-Confirm: sync`；可选 coach 写入口为 `POST /api/coach/*`，必须带 `X-Mi-Fitness-Confirm: coach`；PUT/PATCH/DELETE 一律 405，OPTIONS 仅用于本地 CORS 预检。禁止公网部署、托管代理或多用户服务。
+- 查询服务必须以 `Database(..., read_only=True)` / `mode=ro` 打开，不得调用写方法或修改缓存。显式同步动作可以创建可写 `Database` 并调用 `SyncService`；coach 的 `POST` 动作使用短生命周期可写 `Database`，只写 coach 目标/计划/AI 元数据表。两者都必须使用钥匙串中已有的凭证，不得在 HTTP 请求/响应/日志中接收或回显 passToken、user_id 或 API key。
 - 异常类型集中在 `web/exceptions.py`；所有错误返回统一 JSON 信封（`code`/`message`/`requestId`/`details`）并使用标准 HTTP 状态码；不要向客户端泄露 SQL、路径或凭证。
 - 同步历史写入 `sync_runs`（分类、开始/结束、状态、计数、来源、error_code）；不得写入异常原文、解密数据或健康数值。
 - 响应字段使用 Pydantic camelCase alias，与 `frontend/src/api/types.ts` 对齐；新增/修改字段时同步前端类型、`docs/web-api.md` 和测试。
@@ -58,11 +60,19 @@ mi-fitness-bridge web --host 127.0.0.1 --port 8765
 - 保持非官方/实验性定位声明与上游 MIT 归属（THIRD_PARTY_NOTICES.md），不得在 README/文档中弱化这些声明。
 - `setup` 只走交互式（getpass 不回显）；`--user-id` / `--pass-token` 命令行旗标已于 2026-08-17 移除（会进 shell 历史），不得在文档/脚本中重新引入。
 
+## 可选 coach 扩展规则
+
+- LLM API key 只允许通过交互式 `mi-fitness-bridge coach setup` 写入系统钥匙串；不得进入 `config.json`、命令行参数、MCP 参数、HTTP 请求/响应、环境变量或日志。
+- 远程 LLM 端点必须有 `coach setup` 记录的同意；localhost/Ollama 视为本地端点。每次 AI 调用仍需显式用户动作（CLI flag / Web 按钮 / MCP `consent=true`），不得后台自动调用。
+- 发送给 LLM 的 payload 只能是 `coach/profile.py` 的最小化周聚合；不得包含 `user_id`、`device_id`、GPS、原始样本、workout/sleep ID、精确日期或备注。发送前可用 `coach profile --llm-payload` 预览。
+- AI 运行表只记录 provider/model/token/状态/延迟/错误码；禁止记录 prompt、response、异常原文或密钥。测试必须用 fake provider/respx，不得调用真实模型。
+- coach 不提供医疗诊断、治疗、药物、饮食处方、热量缺口或极端减重建议；计划必须经过 `PlanValidator`，失败时回退本地模板。
+
 ## 升级建议有效性 / 采纳规则（本仓定制）
 
 1. 凡涉及凭证处理、隐私数据流、MCP 工具暴露面的建议：默认从严，凡扩大凭证/数据暴露面的（如托管代理、共享 token、公网部署）一律**记录不做**（SECURITY.md 已明确超出安全模型）。
 2. 适配器协议变更（登录、加密、分页）：必须用 respx mock 补测试，禁止以真实账号请求作为验证手段。
-3. 任何引入遥测/上报/联网分析的建议：一律**记录不做**（local-first 定位）。
+3. 任何引入遥测/上报/联网分析的建议：默认**记录不做**（local-first 定位）。唯一例外是可选 coach 扩展中由用户显式配置、显式触发并已记录远程同意的 LLM 调用；它只能发送最小化周聚合，不得自动后台运行，不得记录 prompt/response，也不得把 API key 放入 config/argv/MCP/HTTP/env。
 4. 上游 API 变动导致的修复：属"立即做"（工具会实际失效），修复后同步 README 的实验性声明和 KNOWN_REGIONS。
 5. 导出格式/查询能力增强：有效即可排期做，但导出内容不得包含 passToken 等凭证字段。
 

@@ -1,8 +1,9 @@
-"""FastAPI application for the local, read-only dashboard API.
+"""FastAPI application for the local dashboard and optional coach API.
 
-The API is intended for ``127.0.0.1`` only. It reads the SQLite cache created
-by the bridge, never writes to it and never touches credentials. Responses are
-JSON; errors use one stable envelope:
+The API is intended for ``127.0.0.1`` only. Queries read the SQLite cache; the
+explicit sync action and confirmed coach mutations write only their local
+tables. The API never accepts credentials. Responses are JSON; errors use one
+stable envelope:
 
     {"error": {"code": "...", "message": "...", "requestId": "...",
                "details": ...}}
@@ -26,6 +27,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from mi_fitness_mcp import __version__
 from mi_fitness_mcp.config import load_config, resolve_database_path
+from mi_fitness_mcp.web.coach_routes import router as coach_router
+from mi_fitness_mcp.web.coach_service import CoachWebService
 from mi_fitness_mcp.web.exceptions import ApiError, DatabaseLockedError
 from mi_fitness_mcp.web.routes import router
 from mi_fitness_mcp.web.service import FitnessService
@@ -92,6 +95,7 @@ def create_app(db_path: Path | str | None = None) -> FastAPI:
     sync_coordinator = SyncCoordinator(
         resolved_path, on_complete=fitness_service.invalidate
     )
+    coach_service = CoachWebService(resolved_path)
 
     async def lifespan(_: FastAPI):
         yield
@@ -104,7 +108,9 @@ def create_app(db_path: Path | str | None = None) -> FastAPI:
             "Local-only HTTP API over the SQLite cache created by "
             "mi-fitness-data-bridge. Query endpoints are read-only; the explicit "
             "local sync action writes the cache using credentials already stored "
-            "in the OS keyring. The API never accepts credentials. Bind it to "
+            "in the OS keyring. Optional coach goal/plan mutations write only local "
+            "coach tables after an explicit confirmation header; AI calls require "
+            "separate consent. The API never accepts credentials. Bind it to "
             "127.0.0.1 only."
         ),
         docs_url="/docs",
@@ -115,12 +121,14 @@ def create_app(db_path: Path | str | None = None) -> FastAPI:
             {"name": "dashboard", "description": "首页聚合数据"},
             {"name": "workouts", "description": "运动列表、汇总与明细"},
             {"name": "sync", "description": "本地同步入口与分类同步状态"},
-            {"name": "goals", "description": "运动目标（规划中）"},
+            {"name": "goals", "description": "旧版运动目标占位接口"},
+            {"name": "coach", "description": "可选本地教练：目标、训练档案与计划"},
             {"name": "system", "description": "健康检查"},
         ],
     )
     app.state.service = fitness_service
     app.state.sync = sync_coordinator
+    app.state.coach = coach_service
 
     app.add_middleware(
         CORSMiddleware,
@@ -149,6 +157,7 @@ def create_app(db_path: Path | str | None = None) -> FastAPI:
         return response
 
     app.include_router(router, prefix="/api")
+    app.include_router(coach_router, prefix="/api")
 
     @app.get("/", include_in_schema=False)
     def root() -> dict[str, str]:

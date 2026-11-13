@@ -42,7 +42,10 @@ app = Server(
         "sync_data starts writes and cancel_sync stops a job. Read all activity columns with "
         "query_daily_activity, one aggregated metric with query_metric_series, and original "
         "weigh-ins with query_body_measurements. Pagination uses limit/offset and next_offset; "
-        "keep filters unchanged and do not sync between pages. This is not medical advice."
+        "keep filters unchanged and do not sync between pages. Coach tools are optional and "
+        "local: AI calls require explicit consent and a recorded provider configuration, never "
+        "accept credentials in tool arguments, and send only a minimized training summary. "
+        "This is not medical advice."
     ),
 )
 
@@ -52,6 +55,7 @@ adapter = None
 sync_service = None
 query_service = None
 sync_history: SyncHistory | None = None
+coach_service = None
 sync_tasks: dict[str, dict[str, Any]] = {}
 sync_active = False
 active_sync_id: str | None = None
@@ -1032,6 +1036,289 @@ async def list_tools() -> list[Tool]:
                 inputSchema={"type": "object", "properties": {}, "additionalProperties": False},
                 annotations=read_only,
             ),
+            Tool(
+                name="coach_get_overview",
+                description=(
+                    "Return a local training profile, active fitness goals with progress, active "
+                    "training-plan summaries, deterministic goal suggestions, coverage warnings, and "
+                    "coach AI status. This read-only tool never contacts Xiaomi or a model provider "
+                    "and never returns credentials, GPS tracks, raw samples, account identifiers, or "
+                    "notes. Use it as the first coach call; inspect data_quality before trusting any "
+                    "recommendation. The optional coach module is disabled by default and its local "
+                    "tables may be absent until initialized."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "weeks": {
+                            "type": "integer",
+                            "minimum": 4,
+                            "maximum": 52,
+                            "description": "Training profile lookback window in weeks.",
+                        }
+                    },
+                    "additionalProperties": False,
+                },
+                annotations=read_only,
+            ),
+            Tool(
+                name="coach_recommend_goals",
+                description=(
+                    "Return explainable fitness-goal suggestions from the recent local training "
+                    "profile. With use_llm=false it uses deterministic rules only and makes no network "
+                    "call. With use_llm=true it calls the user-configured model provider only after "
+                    "explicit consent=true and a recorded remote consent; it sends a minimized weekly "
+                    "summary without identifiers, exact dates, GPS, or raw samples. Recommendations "
+                    "are advisory, not medical advice, and are never saved automatically. Use "
+                    "coach_save_goal to persist a goal."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "weeks": {
+                            "type": "integer",
+                            "minimum": 4,
+                            "maximum": 52,
+                            "description": "Training profile lookback window in weeks.",
+                        },
+                        "use_llm": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Whether to call the configured language model.",
+                        },
+                        "consent": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Explicit per-call consent for a remote model request.",
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+                annotations={**read_only, "openWorldHint": True},
+            ),
+            Tool(
+                name="coach_save_goal",
+                description=(
+                    "Create or update one local fitness goal, then return the saved goal with its "
+                    "current progress. Provide goal_id to update an existing goal; omit it to create "
+                    "a new one. Creating requires goal_type, title, and target_unit; numeric targets, "
+                    "dates, race distance, availability, and local-only notes are optional. This tool "
+                    "writes only local coach tables, never credentials, never health records, and "
+                    "never calls a model. Invalid targets are rejected by conservative validation. "
+                    "Use coach_get_overview to inspect saved goals."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Existing goal identifier to update or target.",
+                        },
+                        "goal_type": {
+                            "type": "string",
+                            "enum": [
+                                "weekly_frequency",
+                                "weekly_duration",
+                                "race",
+                                "distance",
+                                "body_composition",
+                            ],
+                            "description": "Goal type from the supported coach catalog.",
+                        },
+                        "sport": {
+                            "type": "string",
+                            "enum": [
+                                "any",
+                                "running",
+                                "cycling",
+                                "walking",
+                                "strength",
+                                "swimming",
+                                "other",
+                            ],
+                            "description": "Sport filter for the fitness goal.",
+                        },
+                        "title": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Human-readable title for the fitness goal.",
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["target", "trend"],
+                            "description": "Target mode or trend-only tracking mode.",
+                        },
+                        "target_value": {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "description": "Numeric target value expressed in target_unit.",
+                        },
+                        "target_unit": {
+                            "type": "string",
+                            "enum": [
+                                "sessions_per_week",
+                                "minutes_per_week",
+                                "meters",
+                                "kg",
+                                "percent",
+                                "seconds",
+                            ],
+                            "description": "Unit used by the numeric target value.",
+                        },
+                        "period": {
+                            "type": "string",
+                            "enum": ["week", "month", "target_date", "rolling_28d"],
+                            "description": "Progress period used by the fitness goal.",
+                        },
+                        "start_date": {
+                            "type": "string",
+                            "format": "date",
+                            "description": "Goal start date in YYYY-MM-DD format.",
+                        },
+                        "target_date": {
+                            "type": "string",
+                            "format": "date",
+                            "description": "Optional goal or race date in YYYY-MM-DD format.",
+                        },
+                        "race_distance": {
+                            "type": "string",
+                            "enum": ["5k", "10k", "half", "full"],
+                            "description": "Running race distance for race goals.",
+                        },
+                        "target_time_seconds": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 36000,
+                            "description": "Target race time in total seconds.",
+                        },
+                        "available_days": {
+                            "type": "integer",
+                            "minimum": 2,
+                            "maximum": 7,
+                            "description": "Weekly days available for training sessions.",
+                        },
+                        "max_sessions_per_week": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 7,
+                            "description": "Maximum training sessions allowed each week.",
+                        },
+                        "notes": {
+                            "type": "string",
+                            "maxLength": 2000,
+                            "description": "Local-only notes never sent to a model.",
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+                annotations={
+                    **read_only,
+                    "readOnlyHint": False,
+                    "idempotentHint": False,
+                },
+            ),
+            Tool(
+                name="coach_get_plan",
+                description=(
+                    "Return a saved training plan by plan_id, or the active plan for a goal_id, from "
+                    "local SQLite. include_sessions controls whether the full week-by-week session "
+                    "list is returned or only plan metadata and validation warnings. This read-only "
+                    "tool never calls a model provider, never contacts Xiaomi, and never returns "
+                    "credentials or raw health samples. Use coach_generate_plan to create a draft or "
+                    "active plan."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "plan_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Exact identifier of the saved training plan.",
+                        },
+                        "goal_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Goal identifier used to find the active plan.",
+                        },
+                        "include_sessions": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "Whether to include the full session list.",
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+                annotations=read_only,
+            ),
+            Tool(
+                name="coach_generate_plan",
+                description=(
+                    "Generate a conservative multi-week training plan for a saved goal and return "
+                    "the saved plan with validation warnings. The default use_llm=false generates a "
+                    "deterministic local template with no network call. use_llm=true calls the "
+                    "configured model only with explicit consent=true and a recorded remote consent; "
+                    "AI output is validated and falls back to the local template if unsafe. The tool "
+                    "writes a draft unless activate=true, never returns credentials, and is not "
+                    "medical advice."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Saved goal identifier used to generate the plan.",
+                        },
+                        "weeks": {
+                            "type": "integer",
+                            "minimum": 4,
+                            "maximum": 24,
+                            "description": "Requested plan length in whole weeks.",
+                        },
+                        "days_per_week": {
+                            "type": "integer",
+                            "minimum": 2,
+                            "maximum": 6,
+                            "description": "Requested number of training days each week.",
+                        },
+                        "session_minutes": {
+                            "type": "integer",
+                            "minimum": 20,
+                            "maximum": 180,
+                            "description": "Typical session duration in minutes.",
+                        },
+                        "use_llm": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Whether to call the configured language model.",
+                        },
+                        "consent": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Explicit per-call consent for a remote model request.",
+                        },
+                        "activate": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Whether to activate the generated training plan.",
+                        },
+                    },
+                    "required": ["goal_id"],
+                    "additionalProperties": False,
+                },
+                annotations={
+                    **read_only,
+                    "readOnlyHint": False,
+                    "idempotentHint": False,
+                    "openWorldHint": True,
+                },
+            ),
         ]
     )
     paged = {
@@ -1077,7 +1364,7 @@ async def list_tools() -> list[Tool]:
 def _validate_date_arguments(name: str, arguments: dict[str, Any]) -> None:
     """Reject invalid/reversed dates before any cloud or database operation."""
     dates = {}
-    for key in ("date", "start_date", "end_date"):
+    for key in ("date", "start_date", "end_date", "target_date"):
         if key not in arguments:
             continue
         value = arguments[key]
@@ -1194,6 +1481,16 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             result = await _handle_query_abnormal_heart_beat(arguments)
         elif name == "get_data_coverage":
             result = await _handle_get_data_coverage(arguments)
+        elif name == "coach_get_overview":
+            result = await _handle_coach_get_overview(arguments)
+        elif name == "coach_recommend_goals":
+            result = await _handle_coach_recommend_goals(arguments)
+        elif name == "coach_save_goal":
+            result = await _handle_coach_save_goal(arguments)
+        elif name == "coach_get_plan":
+            result = await _handle_coach_get_plan(arguments)
+        elif name == "coach_generate_plan":
+            result = await _handle_coach_generate_plan(arguments)
         else:
             result = {"status": "error", "error": f"Unknown tool: {name}"}
         _paginate_result(name, page_arguments, result)
@@ -1669,8 +1966,212 @@ async def _handle_get_data_coverage(arguments: dict) -> dict:
     return QueryResponse(status="ok", source="cache", data={"coverage": coverage}).model_dump()
 
 
+def _get_coach_service():
+    global coach_service
+    if coach_service is not None:
+        return coach_service
+    if config is None or db is None:
+        raise RuntimeError("Server is not initialized")
+    from mi_fitness_mcp.coach.service import CoachService
+    from mi_fitness_mcp.storage.coach import CoachStore
+
+    store = CoachStore(db)
+    coach_service = CoachService(
+        store,
+        query_service,
+        config.coach,
+        timezone=config.timezone,
+    )
+    return coach_service
+
+
+def _coach_public_goal(goal: dict) -> dict:
+    return {key: value for key, value in goal.items() if key != "user_id"}
+
+
+def _coach_public_plan(plan: dict) -> dict:
+    result = {key: value for key, value in plan.items() if key != "user_id"}
+    snapshot = dict(result.get("goal_snapshot") or {})
+    snapshot.pop("user_id", None)
+    result["goal_snapshot"] = snapshot
+    return result
+
+
+async def _handle_coach_get_overview(arguments: dict) -> dict:
+    service = _get_coach_service()
+    data = service.overview(arguments.get("weeks"))
+    data["goals"] = [
+        {**item, "goal": _coach_public_goal(item["goal"])}
+        for item in data.get("goals", [])
+    ]
+    data["plans"] = [
+        _coach_public_plan(item) for item in data.get("plans", [])
+    ]
+    return QueryResponse(status="ok", source="coach", data=data).model_dump()
+
+
+async def _handle_coach_recommend_goals(arguments: dict) -> dict:
+    service = _get_coach_service()
+    use_llm = bool(arguments.get("use_llm", False))
+    consent = bool(arguments.get("consent", False))
+    if use_llm:
+        recommendations = await service.recommend_goals_ai(
+            arguments.get("weeks"), consent=consent
+        )
+    else:
+        recommendations = service.recommend_goals(arguments.get("weeks"))
+    return QueryResponse(
+        status="ok",
+        source="coach",
+        data={
+            "recommendations": [
+                item.model_dump(mode="json") for item in recommendations
+            ],
+            "ai_used": use_llm,
+        },
+    ).model_dump()
+
+
+_COACH_GOAL_FIELDS = {
+    "goal_type",
+    "sport",
+    "title",
+    "mode",
+    "target_value",
+    "target_unit",
+    "period",
+    "start_date",
+    "target_date",
+    "race_distance",
+    "target_time_seconds",
+    "available_days",
+    "max_sessions_per_week",
+    "notes",
+}
+
+
+def _default_coach_unit(goal_type: str) -> str:
+    return {
+        "weekly_frequency": "sessions_per_week",
+        "weekly_duration": "minutes_per_week",
+        "race": "seconds",
+        "distance": "meters",
+        "body_composition": "kg",
+    }.get(goal_type, "sessions_per_week")
+
+
+def _default_coach_period(goal_type: str, mode: str) -> str:
+    if goal_type == "body_composition":
+        return "rolling_28d" if mode == "trend" else "target_date"
+    if goal_type == "race":
+        return "target_date"
+    return "week"
+
+
+async def _handle_coach_save_goal(arguments: dict) -> dict:
+    service = _get_coach_service()
+    goal_id = arguments.get("goal_id")
+    if goal_id:
+        changes = {
+            key: value
+            for key, value in arguments.items()
+            if key in _COACH_GOAL_FIELDS and key != "goal_id"
+        }
+        service.update_goal(goal_id, changes)
+        data = service.get_goal(goal_id).model_dump(mode="json")
+        return QueryResponse(
+            status="ok",
+            source="coach",
+            data={
+                "goal": _coach_public_goal(data["goal"]),
+                "progress": data["progress"],
+            },
+        ).model_dump()
+
+    data = {
+        key: value
+        for key, value in arguments.items()
+        if key in _COACH_GOAL_FIELDS and key != "goal_id"
+    }
+    goal_type = data.get("goal_type")
+    if not goal_type:
+        raise ValueError("goal_type is required when creating a goal")
+    if not data.get("title"):
+        raise ValueError("title is required when creating a goal")
+    data.setdefault("sport", "running" if goal_type == "race" else "any")
+    data.setdefault("mode", "target")
+    data.setdefault("start_date", datetime.now(UTC).date().isoformat())
+    data.setdefault("target_unit", _default_coach_unit(goal_type))
+    data.setdefault(
+        "period", _default_coach_period(goal_type, str(data["mode"]))
+    )
+    created = service.create_goal(data)
+    saved = service.get_goal(created.id).model_dump(mode="json")
+    return QueryResponse(
+        status="ok",
+        source="coach",
+        data={
+            "goal": _coach_public_goal(saved["goal"]),
+            "progress": saved["progress"],
+        },
+    ).model_dump()
+
+
+async def _handle_coach_get_plan(arguments: dict) -> dict:
+    service = _get_coach_service()
+    plan_id = arguments.get("plan_id")
+    goal_id = arguments.get("goal_id")
+    if plan_id:
+        plan = service.get_plan(plan_id)
+    elif goal_id:
+        plans = service.list_plans(goal_id=goal_id, status="active")
+        if not plans:
+            raise KeyError(f"No active plan for goal: {goal_id}")
+        plan = plans[0]
+    else:
+        raise ValueError("plan_id or goal_id is required")
+    if not arguments.get("include_sessions", True):
+        plan = dict(plan)
+        body = dict(plan.get("plan") or {})
+        body["weeks"] = [
+            {**week, "sessions": []} for week in body.get("weeks", [])
+        ]
+        plan["plan"] = body
+    return QueryResponse(
+        status="ok", source="coach", data={"plan": _coach_public_plan(plan)}
+    ).model_dump()
+
+
+async def _handle_coach_generate_plan(arguments: dict) -> dict:
+    service = _get_coach_service()
+    goal_id = arguments.get("goal_id")
+    if not goal_id:
+        raise ValueError("goal_id is required")
+    use_llm = bool(arguments.get("use_llm", False))
+    consent = bool(arguments.get("consent", False))
+    activate = bool(arguments.get("activate", False))
+    kwargs = {
+        "weeks": arguments.get("weeks"),
+        "days_per_week": arguments.get("days_per_week"),
+        "session_minutes": arguments.get("session_minutes"),
+        "activate": activate,
+    }
+    if use_llm:
+        plan = await service.generate_plan_ai(
+            goal_id, consent=consent, **kwargs
+        )
+    else:
+        plan = service.generate_plan(goal_id, **kwargs)
+    return QueryResponse(
+        status="ok",
+        source="coach",
+        data={"plan": _coach_public_plan(plan.model_dump(mode="json"))},
+    ).model_dump()
+
+
 async def main(db_path=None):
-    global config, db, adapter, sync_service, query_service, sync_history
+    global config, db, adapter, sync_service, query_service, sync_history, coach_service
+    coach_service = None
     config = load_config()
     if db_path is not None:
         # Explicit CLI/--env override: serve strictly uses the given database.

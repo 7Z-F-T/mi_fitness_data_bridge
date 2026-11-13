@@ -17,9 +17,18 @@ through the MCP SDK request handlers, not just by inspecting this document.
   consent before syncing. It does not delete the database or edit cloud records.
 - `cancel_sync` stops a background MCP job and writes its local job status; it
   does not delete committed records or start new cloud requests. It is not read-only.
-- The other 15 tools read local cache, persistent job state or connected-account
-  metadata; they do not fetch fresh cloud health records. Their annotations are
-  `readOnlyHint=true`, `openWorldHint=false`, `destructiveHint=false`.
+- The remaining local read tools read cache, persistent job state, connected-account
+  metadata, or local coach tables; they do not fetch fresh cloud health records.
+  Their annotations are `readOnlyHint=true`, `openWorldHint=false`,
+  `destructiveHint=false`.
+- `coach_save_goal` writes only the local coach goal table. `coach_generate_plan`
+  writes a local draft plan and may call a user-configured LLM when
+  `use_llm=true`; neither tool accepts credentials or returns raw health samples.
+- `coach_recommend_goals` and `coach_generate_plan` are open-world only because
+  they may call the configured LLM after explicit `consent=true` and a recorded
+  remote consent. The payload is a minimized weekly training summary without
+  account IDs, device IDs, exact dates, GPS, raw samples, or notes. The server
+  records only provider/model/token/status metadata, never prompt or response text.
 - Annotations are hints, not authorization/security enforcement. Sensitive
   results may leave the computer through the chosen MCP client or model.
 
@@ -45,10 +54,18 @@ through the MCP SDK request handlers, not just by inspecting this document.
 | Device stress values | `query_stress` | timestamp, stress_score, level |
 | Device-reported heartbeat events | `query_abnormal_heart_beat` | event ID, start/end, duration_seconds |
 | Available cached dates | `get_data_coverage` | per-type first_date, last_date, days_with_data |
+| Optional coach overview | `coach_get_overview` | training profile, goal progress, active plans, local suggestions, data quality |
+| Optional coach goal suggestions | `coach_recommend_goals` | explainable rule or AI goal recommendations; no automatic save |
+| Optional coach goal write | `coach_save_goal` | saved goal with current progress; local coach table only |
+| Optional coach plan read | `coach_get_plan` | saved plan by ID or active plan for a goal |
+| Optional coach plan generation | `coach_generate_plan` | validated local or AI-generated plan; draft unless activated |
 
-The catalog advertises 18 tools. The former names `get_daily_summary` and
+The catalog advertises 23 tools. The former names `get_daily_summary` and
 `workout_series` remain callable aliases for `query_daily_activity` and
 `query_workout_series`, respectively, but are not advertised as duplicate tools.
+The five `coach_*` tools belong to the optional coach extension; local goal and
+plan reads work without an LLM, while AI calls require `consent=true` and an
+interactive provider configuration.
 
 MCP job history survives restarts in local SQLite, retaining the latest 500
 terminal jobs plus active jobs for each account. It excludes CLI syncs, raw

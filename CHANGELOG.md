@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Add an optional, default-off `coach` extension for local fitness goals and training plans:
+  - New additive `coach_goals`, `coach_training_plans` and `coach_ai_runs` tables; AI-run metadata excludes prompts, responses, keys and health payloads.
+  - Deterministic training profile (weekly volume, frequency, longest session, 5K proxy, sleep/body context, data-quality caveats), weekly/distance/race/body-composition goals, and local template plans.
+  - Optional Anthropic (`.[coach]`) and OpenAI-compatible (DeepSeek/Qwen/Kimi/OpenAI/Ollama) providers with schema-validated output, conservative plan validation, and deterministic fallback.
+  - CLI `coach setup/status/profile/recommend/goals/plan`; interactive setup stores the API key in the OS keyring and records remote consent. No key in `config.json`, CLI/MCP arguments, HTTP, env or logs.
+  - Five new MCP tools (23 total): `coach_get_overview`, `coach_recommend_goals`, `coach_save_goal`, `coach_get_plan`, `coach_generate_plan`.
+  - Local Web API `/api/coach/*` with `X-Mi-Fitness-Confirm: coach` on writes and a redesigned Goals page. AI calls require explicit consent; remote consent is granted only by `coach setup`.
+  - Privacy boundary: only minimized weekly aggregates are sent to a remote LLM; no account/device IDs, GPS, raw samples, exact dates or notes. Scope docs now say “core bridge does not coach; coach is an optional local extension.”
+  - Tests use synthetic multi-week fixtures and fake providers/respx only; no real model, account or device validation is claimed.
+
 - Add per-dataset sync history and a local sync entry point:
   - New additive `sync_runs` table records each data type's start/finish time, status (`running`/`ok`/`partial`/`error`/`cancelled`), added/updated/skipped counts, source (`cli`/`mcp`/`web`), incremental flag, requested dates and error code. Raw exception text and health values are never stored.
   - `SyncService` records every CLI/MCP/web type run; the existing `sync_state` watermark remains the incremental cursor.
