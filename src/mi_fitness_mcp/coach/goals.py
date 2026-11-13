@@ -16,6 +16,7 @@ from mi_fitness_mcp.coach.models import (
     GoalWithProgress,
     TrainingProfile,
 )
+from mi_fitness_mcp.coach.profile import workout_duration_seconds
 from mi_fitness_mcp.services.query_service import QueryService
 from mi_fitness_mcp.storage.coach import CoachStore
 from mi_fitness_mcp.web.mappers import normalize_activity_type
@@ -318,11 +319,29 @@ class GoalService:
         completion = _clamp(target / current) if current > 0 else None
         on_track = current <= target * 1.05
         status = "achieved" if current <= target else "ok" if on_track else "behind"
-        evidence = [
-            f"近期跑步估算目标距离用时 {_format_seconds(current)}（{method}）"
-        ]
-        if source_date:
-            evidence.append(f"参考记录日期 {source_date.isoformat()}")
+        if str(self.language).lower().startswith("en"):
+            method_label = (
+                "scaled from recent running pace"
+                if method == "recent_distance_scaled"
+                else "scaled from recent average pace"
+            )
+            evidence = [
+                f"Estimated race-distance time from recent runs: "
+                f"{_format_seconds(current)} ({method_label})"
+            ]
+            if source_date:
+                evidence.append(f"Reference workout date: {source_date.isoformat()}")
+        else:
+            method_label = (
+                "按近期跑步配速折算"
+                if method == "recent_distance_scaled"
+                else "按近期平均配速折算"
+            )
+            evidence = [
+                f"近期跑步估算目标距离用时 {_format_seconds(current)}（{method_label}）"
+            ]
+            if source_date:
+                evidence.append(f"参考记录日期 {source_date.isoformat()}")
         return GoalProgress(
             goal_id=goal.id,
             status=status,
@@ -518,8 +537,22 @@ class GoalService:
                         data_gaps=gaps,
                     )
                 )
-        if profile.best_5k_proxy.estimated_5k_seconds and active_weeks >= 4:
-            target_seconds = round(profile.best_5k_proxy.estimated_5k_seconds * 0.98)
+        proxy = profile.best_5k_proxy
+        if proxy.estimated_5k_seconds and active_weeks >= 4:
+            target_seconds = round(proxy.estimated_5k_seconds * 0.98)
+            source_parts: list[str] = []
+            if proxy.source_distance_km is not None:
+                source_parts.append(f"{proxy.source_distance_km:g} 公里")
+            if proxy.source_workout_date is not None:
+                source_parts.append(proxy.source_workout_date.isoformat())
+            source_label = f"（{'，'.join(source_parts)}）" if source_parts else ""
+            evidence = [f"best_5k_proxy={proxy.estimated_5k_seconds}"]
+            if proxy.source_distance_km is not None:
+                evidence.append(f"source_distance_km={proxy.source_distance_km}")
+            if proxy.source_workout_date is not None:
+                evidence.append(
+                    f"source_workout_date={proxy.source_workout_date.isoformat()}"
+                )
             candidates.append(
                 GoalRecommendation(
                     goal_type="race",
@@ -528,18 +561,17 @@ class GoalService:
                     target_value=float(target_seconds),
                     target_time_seconds=target_seconds,
                     race_distance="5k",
-                    baseline_value=float(profile.best_5k_proxy.estimated_5k_seconds),
+                    baseline_value=float(proxy.estimated_5k_seconds),
                     target_unit="seconds",
                     period="target_date",
                     start_date=self.today,
                     target_date=self.today + timedelta(weeks=12),
                     rationale=(
-                        "基于近期跑步的 5K 配速代理值，目标提高约 2%；"
+                        f"基于近期跑步{source_label}的平均配速折算 5K 约 "
+                        f"{_format_seconds(proxy.estimated_5k_seconds)}，目标提高约 2%；"
                         "这是训练目标，不是正式比赛成绩预测。"
                     ),
-                    evidence=[
-                        f"best_5k_proxy={profile.best_5k_proxy.estimated_5k_seconds}"
-                    ],
+                    evidence=evidence,
                     confidence="low",
                     data_gaps=gaps + ["5K 代理值不是芯片计时 PB。"],
                 )
@@ -720,14 +752,14 @@ class GoalService:
         candidates: list[tuple[float, date | None, str]] = []
         for workout in workouts:
             distance_m = _number(workout.get("distance_m"))
-            duration = _number(workout.get("duration_minutes")) or 0
+            duration_seconds = workout_duration_seconds(workout) or 0
             pace = _number(workout.get("avg_pace_sec_per_km"))
             if not distance_m or distance_m <= 0:
                 continue
             if distance_m < target_distance * 0.9:
                 continue
-            if duration > 0:
-                estimate = duration * 60 * target_distance / distance_m
+            if duration_seconds > 0:
+                estimate = duration_seconds * target_distance / distance_m
                 method = "recent_distance_scaled"
             elif pace:
                 estimate = pace * target_distance / 1000

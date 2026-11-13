@@ -49,6 +49,36 @@ export function formatDuration(
   return `${rest}m`
 }
 
+export function workoutDurationSeconds(workout: {
+  durationMinutes: number
+  startAt: string
+  endAt: string
+}): number {
+  const fallback = Math.max(0, Math.round(workout.durationMinutes * 60))
+  const start = Date.parse(workout.startAt)
+  const end = Date.parse(workout.endAt)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return fallback
+  }
+  const seconds = Math.round((end - start) / 1000)
+  if (seconds > 86400) return fallback
+  // Reject timezone/clock glitches. Real pauses stay well inside this bound.
+  const limit = Math.max(fallback * 2, fallback + 3600)
+  return seconds <= limit ? seconds : fallback
+}
+
+export function formatDurationClock(seconds: number | null | undefined): string {
+  if (seconds == null || Number.isNaN(seconds)) return '—'
+  const total = Math.max(0, Math.round(seconds))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const rest = total % 60
+  const mm = String(minutes).padStart(2, '0')
+  const ss = String(rest).padStart(2, '0')
+  if (hours > 0) return `${hours}:${mm}:${ss}`
+  return `${minutes}:${ss}`
+}
+
 export function formatDistance(
   meters: number | null | undefined,
   locale: string,

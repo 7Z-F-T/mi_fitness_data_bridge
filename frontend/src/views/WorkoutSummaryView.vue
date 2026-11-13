@@ -18,14 +18,15 @@ import type {
   WorkoutSummaryBucket,
 } from '../api/types'
 import { useAppStore } from '../stores/app'
-import { activityMeta } from '../utils/activity'
+import { activityMeta, normalizeActivityType } from '../utils/activity'
 import { chartPalette } from '../utils/chart'
 import {
   formatBucketLabel,
   formatDistance,
-  formatDuration,
+  formatDurationClock,
   formatNumber,
   formatRangeLabel,
+  workoutDurationSeconds,
 } from '../utils/format'
 import EChart from '../components/EChart.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -56,6 +57,17 @@ const rangeLabel = computed(() =>
 
 const metricLabel = computed(() => t(`summary.metric.${metric.value}`))
 
+const totalDurationSeconds = computed(() => {
+  const workouts = summary.value?.workouts
+  if (!workouts?.length) {
+    return (summary.value?.totals.durationMinutes ?? 0) * 60
+  }
+  return workouts.reduce(
+    (total, workout) => total + workoutDurationSeconds(workout),
+    0,
+  )
+})
+
 const kpis = computed(() => {
   const totals = summary.value?.totals
   return [
@@ -67,7 +79,7 @@ const kpis = computed(() => {
     },
     {
       label: t('summary.duration'),
-      value: formatDuration(totals?.durationMinutes ?? 0, locale.value),
+      value: formatDurationClock(totalDurationSeconds.value),
       icon: Timer,
       accent: '#2563eb',
     },
@@ -162,17 +174,27 @@ const chartOption = computed<EChartsOption>(() => {
 const typeOrder = ['cycling', 'running', 'walking', 'swimming', 'strength', 'other'] as const
 
 const typeRows = computed(() => {
-  const types = summary.value?.byType ?? []
-  const totalDuration = types.reduce((total, item) => total + item.durationMinutes, 0)
-  const byType = new Map(types.map((item) => [item.type, item]))
+  const byType = new Map<string, { workouts: number; durationSeconds: number }>()
+  for (const workout of summary.value?.workouts ?? []) {
+    const type = normalizeActivityType(workout.activityType)
+    const item = byType.get(type) ?? { workouts: 0, durationSeconds: 0 }
+    item.workouts += 1
+    item.durationSeconds += workoutDurationSeconds(workout)
+    byType.set(type, item)
+  }
+  const totalDuration = [...byType.values()].reduce(
+    (total, item) => total + item.durationSeconds,
+    0,
+  )
   return typeOrder.flatMap((type) => {
     const item = byType.get(type)
     if (!item) return []
     return [
       {
+        type,
         ...item,
-        meta: activityMeta(item.type),
-        percent: totalDuration ? (item.durationMinutes / totalDuration) * 100 : 0,
+        meta: activityMeta(type),
+        percent: totalDuration ? (item.durationSeconds / totalDuration) * 100 : 0,
       },
     ]
   })
@@ -331,7 +353,7 @@ onMounted(load)
             <div class="card-header">
               <div>
                 <h2>{{ t('summary.byType') }}</h2>
-                <p>{{ formatDuration(summary.totals.durationMinutes, locale) }}</p>
+                <p>{{ formatDurationClock(totalDurationSeconds) }}</p>
               </div>
             </div>
 
@@ -349,7 +371,7 @@ onMounted(load)
                     <span>{{ t(row.meta.labelKey) }}</span>
                     <span class="num muted">
                       {{ row.workouts }}×&nbsp;·&nbsp;{{
-                        formatDuration(row.durationMinutes, locale)
+                        formatDurationClock(row.durationSeconds)
                       }}
                     </span>
                   </div>

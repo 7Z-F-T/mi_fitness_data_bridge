@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Fix the 5K race proxy and race-goal estimate to use exact workout start/end seconds instead of the minute-truncated `duration_minutes` field. Truncation could overstate a ~5 km estimate by up to 59 seconds. Race-goal cards now show the estimate method and reference workout date, the rule recommendation names the source distance/date, and workout duration is rendered as `mm:ss`/`h:mm:ss` in the list, drawer and summary instead of whole minutes.
+
 - Add an optional, default-off `coach` extension for local fitness goals and training plans:
   - New additive `coach_goals`, `coach_training_plans` and `coach_ai_runs` tables; AI-run metadata excludes prompts, responses, keys and health payloads.
   - Deterministic training profile (weekly volume, frequency, longest session, 5K proxy, sleep/body context, data-quality caveats), weekly/distance/race/body-composition goals, and local template plans.

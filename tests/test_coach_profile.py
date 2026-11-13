@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 
 from mi_fitness_mcp.coach.profile import (
     BANNED_PAYLOAD_KEYS,
     TrainingProfileBuilder,
     assert_minimized,
+    workout_duration_seconds,
 )
 from mi_fitness_mcp.services.query_service import QueryService
 from mi_fitness_mcp.storage import Database
@@ -75,6 +77,40 @@ def test_assert_minimized_rejects_identifiers_and_dates():
         pass
     else:  # pragma: no cover
         raise AssertionError("exact date should be rejected")
+
+
+def test_workout_duration_seconds_avoids_minute_truncation():
+    workout = {
+        "duration_minutes": 26,
+        "start_at": "2026-11-12T07:00:00+08:00",
+        "end_at": "2026-11-12T07:26:59+08:00",
+    }
+    assert workout_duration_seconds(workout) == 1619
+
+    proxy = TrainingProfileBuilder._best_5k_proxy(
+        [
+            {
+                "_sport": "running",
+                "_distance_m": 5012.0,
+                "_duration_seconds": 1619.0,
+                "_pace": 323.0,
+                "_date": date(2026, 11, 12),
+            }
+        ]
+    )
+    # 1619 s scaled to 5 km is 26:55, not the 25:56 the truncated 26 min gave.
+    assert proxy.estimated_5k_seconds == 1615
+    assert proxy.source_distance_km == 5.0
+
+
+def test_workout_duration_seconds_falls_back_without_timestamps():
+    assert workout_duration_seconds({"duration_minutes": 47}) == 2820
+    glitched = {
+        "duration_minutes": 26,
+        "start_at": "2026-11-12T07:00:00+08:00",
+        "end_at": "2026-11-12T12:00:00+08:00",
+    }
+    assert workout_duration_seconds(glitched) == 1560
 
 
 def test_minimal_history_is_insufficient(tmp_path):

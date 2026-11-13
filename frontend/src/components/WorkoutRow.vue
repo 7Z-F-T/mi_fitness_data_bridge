@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { ArrowUpRight } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import type { Workout } from '../api/types'
@@ -6,8 +7,9 @@ import { activityMeta } from '../utils/activity'
 import {
   formatDateTime,
   formatDistance,
-  formatDuration,
+  formatDurationClock,
   formatNumber,
+  workoutDurationSeconds,
 } from '../utils/format'
 
 const props = defineProps<{ workout: Workout }>()
@@ -15,6 +17,9 @@ const emit = defineEmits<{ open: [workoutId: string] }>()
 
 const { t, locale } = useI18n()
 const meta = activityMeta(props.workout.activityType)
+const duration = computed(() =>
+  formatDurationClock(workoutDurationSeconds(props.workout)),
+)
 </script>
 
 <template>
@@ -40,7 +45,7 @@ const meta = activityMeta(props.workout.activityType)
     <dl class="workout-metrics">
       <div>
         <dt>{{ t('workout.duration') }}</dt>
-        <dd class="num">{{ formatDuration(workout.durationMinutes, locale) }}</dd>
+        <dd class="num">{{ duration }}</dd>
       </div>
       <div v-if="workout.distanceM">
         <dt>{{ t('workout.distance') }}</dt>

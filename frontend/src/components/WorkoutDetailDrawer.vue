@@ -10,11 +10,12 @@ import { activityMeta } from '../utils/activity'
 import {
   formatDateTime,
   formatDistance,
-  formatDuration,
+  formatDurationClock,
   formatNumber,
   formatPace,
   formatSpeed,
   formatTime,
+  workoutDurationSeconds,
 } from '../utils/format'
 import { chartPalette } from '../utils/chart'
 import EChart from './EChart.vue'
@@ -74,7 +75,7 @@ const statItems = computed<StatItem[]>(() => {
   const stats: StatItem[] = [
     {
       labelKey: 'workout.duration',
-      value: formatDuration(item.durationMinutes, locale.value),
+      value: formatDurationClock(workoutDurationSeconds(item)),
     },
   ]
 

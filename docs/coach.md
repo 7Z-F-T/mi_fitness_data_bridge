@@ -75,7 +75,7 @@ mi-fitness-bridge coach plan --goal <goal_id> --generate --llm --activate
 - 睡眠均值（至少 3 晚）和体重/体脂趋势（至少 4 次、跨度 ≥21 天）。
 - `data_quality`：`ok` / `partial` / `insufficient`，以及缺失指标和注意事项。
 
-缺失的周不会补 0；只统计有记录的周。`best_5k_proxy` 是按近期跑步配速缩放的代理值，不是正式 5K PB。
+缺失的周不会补 0；只统计有记录的周。`best_5k_proxy` 是按近期跑步配速缩放的代理值，不是正式 5K PB：对窗口内距离 ≥5 km 的跑步，用精确的 `start_at`/`end_at` 秒差（而不是截断到分钟的 `duration_minutes`）计算 `用时 × 5000 / 距离`，取最小值。比赛目标的进度使用同一公式，但窗口为 84 天、距离下限为目标距离的 90%。目标卡会显示估算方法和参考记录日期。
 
 ## 5. AI 数据边界
 

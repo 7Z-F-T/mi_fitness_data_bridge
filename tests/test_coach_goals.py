@@ -89,6 +89,46 @@ def test_race_goal_uses_recent_estimate(tmp_path):
     assert progress.target_value == 1500
 
 
+class _StubQuery:
+    def __init__(self, workouts: list[dict]):
+        self.workouts = workouts
+
+    def get_workouts(self, start_date: str, end_date: str) -> list[dict]:
+        return self.workouts
+
+
+def test_race_estimate_uses_exact_seconds(tmp_path):
+    service, _, today, _ = _service(tmp_path)
+    service.query = _StubQuery(
+        [
+            {
+                "activity_type": "outdoor_running",
+                "distance_m": 5012.0,
+                "duration_minutes": 26,
+                "avg_pace_sec_per_km": 323.0,
+                "start_at": f"{today.isoformat()}T07:00:00+08:00",
+                "end_at": f"{today.isoformat()}T07:26:59+08:00",
+            }
+        ]
+    )
+    goal = GoalCreate(
+        goal_type="race",
+        sport="running",
+        title="5K 25 分钟",
+        target_unit="seconds",
+        period="target_date",
+        start_date=today,
+        target_date=today + timedelta(weeks=12),
+        race_distance="5k",
+        target_time_seconds=1500,
+    )
+    estimate = service._race_estimate(goal, as_of=today)
+    assert estimate is not None
+    # 1619 s over 5.012 km is 26:55; the old 26-minute field gave 25:56.
+    assert estimate[0] == pytest.approx(1615.1, abs=0.1)
+    assert estimate[1] == today
+
+
 def test_body_trend_and_target_goals(tmp_path):
     service, _, today, _ = _service(tmp_path)
     trend = service.create(

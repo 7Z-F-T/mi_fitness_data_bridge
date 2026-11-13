@@ -77,6 +77,30 @@ def _number(value: Any) -> float | None:
         return None
 
 
+def workout_duration_seconds(workout: dict[str, Any]) -> float | None:
+    """Return elapsed workout seconds without the stored minute truncation.
+
+    ``duration_minutes`` is persisted as ``int(duration_seconds // 60)``, so
+    scaling a workout to a race distance from it can overstate performance by
+    up to 59 seconds (and averages ~30 s). Prefer the exact start/end delta,
+    which is what the minute field was derived from, then fall back to the
+    minute field when timestamps are absent or implausible.
+    """
+    minutes = _number(workout.get("duration_minutes"))
+    start = _parse_timestamp(workout.get("start_at"))
+    end = _parse_timestamp(workout.get("end_at"))
+    if start is not None and end is not None:
+        seconds = (end - start).total_seconds()
+        if 0 < seconds <= 24 * 3600:
+            # Accept pauses up to an hour, but reject corrupt end timestamps.
+            base = (minutes or 0) * 60
+            if minutes is None or seconds <= max(base * 2, base + 3600):
+                return seconds
+    if minutes is not None and minutes > 0:
+        return minutes * 60.0
+    return None
+
+
 def _goal_value(goal: Any, key: str, default: Any = None) -> Any:
     if isinstance(goal, dict):
         return goal.get(key, default)
@@ -210,6 +234,7 @@ class TrainingProfileBuilder:
                     "_date": workout_date,
                     "_sport": normalize_activity_type(workout.get("activity_type")),
                     "_duration": max(0.0, duration),
+                    "_duration_seconds": workout_duration_seconds(workout) or 0.0,
                     "_distance_m": distance_m,
                     "_calories": _number(workout.get("calories_kcal")) or 0,
                     "_avg_hr": _number(workout.get("avg_heart_rate_bpm")),
@@ -344,8 +369,9 @@ class TrainingProfileBuilder:
             distance_m = item["_distance_m"]
             if not distance_m or distance_m < 5000:
                 continue
-            if item["_duration"] > 0:
-                estimate = item["_duration"] * 60 * 5000 / distance_m
+            duration_seconds = item["_duration_seconds"]
+            if duration_seconds > 0:
+                estimate = duration_seconds * 5000 / distance_m
             elif item["_pace"]:
                 estimate = item["_pace"] * 5
             else:

@@ -434,6 +434,9 @@ async function activatePlan(plan: CoachPlan) {
                 · {{ t('coach.daysLeft') }} {{ item.progress.daysRemaining }}
               </template>
             </p>
+            <p v-if="item.progress.evidence.length" class="goal-evidence muted">
+              {{ item.progress.evidence.join(' · ') }}
+            </p>
           </article>
         </div>
       </section>
@@ -645,6 +648,11 @@ async function activatePlan(plan: CoachPlan) {
   color: var(--text-faint);
   font-size: 0.82rem;
   line-height: 1.5;
+}
+
+.goal-evidence {
+  margin-top: 6px;
+  font-size: 0.76rem;
 }
 
 .error-text,
