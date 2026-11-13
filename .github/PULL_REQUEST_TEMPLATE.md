@@ -5,7 +5,7 @@ Describe the bridge, schema, export, compatibility, documentation, or test chang
 ## Validation
 
 - [ ] `python -m pytest -q -p no:cacheprovider`
-- [ ] `python -m ruff check src tests`
+- [ ] `python -m ruff check src tests scripts`
 - [ ] Syntax/build checks pass where applicable
 
 ## Data and security
@@ -17,7 +17,7 @@ Describe the bridge, schema, export, compatibility, documentation, or test chang
 
 ## Licensing
 
-- [ ] I agree to the contribution licensing terms in `CONTRIBUTING.md` (AGPL-3.0-only, plus granting the maintainer the right to offer commercial licenses)
+- [ ] I agree to the AGPL-3.0-only contribution licensing terms in `CONTRIBUTING.md` and will preserve upstream copyright notices
 
 ## Compatibility
 

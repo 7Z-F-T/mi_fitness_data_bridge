@@ -2,7 +2,7 @@
 
 ## Project scope
 
-- Stable path: `D:\AIWork\projects\mi_fitness_data_bridge`.
+- Work from the repository root; do not assume a machine-specific absolute path.
 - This project is the single implementation for reading a user's own Mi Fitness health data and exporting it to local standard formats.
 - The core bridge is infrastructure first: no medical advice, hosted/multi-user dashboard, or business-specific analytics. An optional local-only dashboard/API (`frontend/` and `src/mi_fitness_mcp/web/`) serves the user's own local cache.
 - The optional `coach` extension (`.[coach]`, off by default) adds local goals, deterministic training profiles/plans, and opt-in LLM goal/plan suggestions. It does not diagnose, treat, prescribe diets, or provide medical advice; core sync/export/query behavior is unchanged.

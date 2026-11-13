@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Keep the fork under **AGPL-3.0-only**, update the package metadata/classifier and contribution terms, and add a fork-provenance + disclaimer section to both READMEs. Original upstream MIT notices, the upstream repository's license history, and third-party attribution remain in `LICENSE` and `THIRD_PARTY_NOTICES.md`.
+
+- Rewrite `README.md` / `README.en.md` as deployment-first runbooks: install extras, account setup, first sync, export, local API + frontend, MCP, optional coach, upgrade/restart, plus command-to-documentation tables. Add [docs/README.md](docs/README.md) as the documentation index and mark historical investigation documents as historical. No runtime behavior changes.
+
 - Fix the 5K race proxy and race-goal estimate to use exact workout start/end seconds instead of the minute-truncated `duration_minutes` field. Truncation could overstate a ~5 km estimate by up to 59 seconds. Race-goal cards now show the estimate method and reference workout date, the rule recommendation names the source distance/date, and workout duration is rendered as `mm:ss`/`h:mm:ss` in the list, drawer and summary instead of whole minutes.
 
 - Add an optional, default-off `coach` extension for local fitness goals and training plans:

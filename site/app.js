@@ -11,7 +11,7 @@ function render() {
   document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
   document.querySelectorAll("[data-zh]").forEach(el => { el.innerHTML = el.dataset[language]; });
   document.getElementById("language").textContent = language === "zh" ? "English" : "中文";
-  document.getElementById("install").href = "https://github.com/shkyyy18/mi_fitness_data_bridge" + (language === "zh" ? "#安装" : "/blob/main/README.en.md#install");
+  document.getElementById("install").href = "https://github.com/7Z-F-T/mi_fitness_data_bridge" + (language === "zh" ? "#安装" : "/blob/main/README.en.md#install");
   document.querySelectorAll("[data-dataset]").forEach(el => el.setAttribute("aria-pressed", String(el.dataset.dataset === dataset)));
   const table = document.createElement("table");
   const caption = table.createCaption();

@@ -37,8 +37,8 @@ pnpm build      # type-check + production build into dist/
 pnpm preview    # serve the production build locally
 ```
 
-Node 20+ is recommended. If pnpm is not enabled, run `corepack enable` (or
-install pnpm globally) first.
+Vite 8 requires Node.js 20.19+ (or 22.12+). If pnpm is not enabled, run
+`corepack enable` (or install pnpm globally) first.
 
 ## Data source
 

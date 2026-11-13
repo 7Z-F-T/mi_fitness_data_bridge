@@ -1,5 +1,7 @@
 # TDQS remediation — 2026-09-21
 
+> **历史记录。** 本文保留当时的整改证据，不代表当前评分或行为。见 [文档索引](README.md)。
+
 ## Observed evidence (not a self-assigned replacement score)
 
 The supplied screenshot shows Glama TDQS **C, 2.6/5**, covering 15 tools,

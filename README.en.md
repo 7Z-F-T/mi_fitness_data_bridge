@@ -1,71 +1,67 @@
-> 中文版：[README.md](README.md)
+> Chinese: [README.md](README.md)
 
-# Mi Fitness Data Bridge — local CSV/JSON export & MCP
+# Mi Fitness Data Bridge — local export, MCP, and dashboard
 
-[![Glama score](https://glama.ai/mcp/servers/shkyyy18/mi_fitness_data_bridge/badges/score.svg)](https://glama.ai/mcp/servers/shkyyy18/mi_fitness_data_bridge)
+[![Glama score (upstream listing)](https://glama.ai/mcp/servers/shkyyy18/mi_fitness_data_bridge/badges/score.svg)](https://glama.ai/mcp/servers/shkyyy18/mi_fitness_data_bridge)
 
-**Save your own Mi Fitness data locally as CSV, JSON or SQLite.** Back up records, open them in a spreadsheet, or use your own analysis programs. Python integration and a local stdio MCP server are included. Available data depends on the device, account region and upstream service.
+**Sync your own Mi Fitness data into local SQLite, export JSON/CSV, and query it through a local MCP server or web dashboard.** Built for personal backup and analysis; available data depends on the device, account region, and upstream service.
 
-> **Unofficial and experimental.** This project is not affiliated with, endorsed by, or supported by Xiaomi. Xiaomi, Mi Home, and Mi Fitness are trademarks of Xiaomi Corporation. The adapter relies on non-public upstream endpoints, so authentication, connectivity, or individual data types can stop working when Xiaomi changes its services, account-region behavior, devices, firmware, or authentication. Use it only with accounts and data you are authorized to access.
+> **Unofficial and experimental.** This project is not affiliated with, endorsed by, or supported by Xiaomi. The adapter relies on non-public upstream endpoints, so authentication, connectivity, or individual data types can stop working when Xiaomi changes its services, account-region behavior, devices, firmware, or authentication. Use it only with accounts and data you are authorized to access.
 
+> **Fork notice:** This repository is a fork of [`shkyyy18/mi_fitness_data_bridge`](https://github.com/shkyyy18/mi_fitness_data_bridge) with subsequent development. It is not an official upstream release. See [Fork statement and disclaimer](#fork-statement-and-disclaimer) for provenance, changes, disclaimer, and licensing.
 
+No account needed to see the output: open the [upstream project's synthetic browser demo](https://shkyyy18.github.io/mi_fitness_data_bridge/?lang=en) or run `python examples/synthetic_demo.py` after installing. Neither uses credentials; the local script also makes no network requests.
 
-**[▶ Try the synthetic export demo — no login](https://shkyyy18.github.io/mi_fitness_data_bridge/?lang=en)** · [Compatibility and limitations](docs/compatibility.md) · [中文](README.md)
+## Deployment options
 
-## See the output before connecting an account
+This project supports **local, single-user** deployment only. Do not deploy it publicly and do not add hosted accounts, shared credentials, or multi-user access.
 
-- **Just exploring?** Open the static demo, switch between activity, sleep, workout and body samples, and download synthetic CSV / JSON. No installation, account or token.
-- **Testing locally?** Install below, then run `python examples/synthetic_demo.py`. No `setup`, credentials or Xiaomi connection needed.
-- **Connecting your own account?** Read the [compatibility and credential prerequisites](docs/compatibility.md) first. There is no one-click account authorization flow and no guarantee of support for all devices or regions.
+| Form | Install | Entry point | Use case |
+| --- | --- | --- | --- |
+| CLI sync and export | `pip install -e .` | `mi-fitness-bridge sync/export` | Backup, CSV/JSON, scripts |
+| Local MCP | `pip install -e .` | `mi-fitness-bridge serve` | Local MCP / AI clients |
+| Local web dashboard | `pip install -e '.[web]'` + frontend | `mi-fitness-bridge web` + `pnpm dev` | Browser analysis |
+| Optional coach | `pip install -e '.[coach]'` (with web: `'.[coach,web]'`) | `mi-fitness-bridge coach ...` | Goals and training plans |
 
-> The demo uses invented records. It demonstrates local export, not live cloud sync or device compatibility. The static page accepts no credentials or health data. Real exports can contain a plaintext `user_id`. Local MCP does not make the entire AI workflow offline: review the client/model's data handling separately.
-
-![Synthetic Mi Fitness export preview: no account, downloadable CSV and JSON](docs/assets/synthetic-export-preview.en.png)
-
-*The screenshot and every example in this README use synthetic data. No credential, account identifier, or real health export is included.*
-
-## What it does
-
-| Capability | Details |
-| --- | --- |
-| Local cache | Stores normalized synchronized records in a SQLite database on your machine. |
-| Portable exports | Writes JSON or CSV files for backup, personal analysis, or use with an AI model; exports never include the saved `passToken`. |
-| Local MCP server | Provides stdio tools for personal automation and local AI workflows. |
-| Python integration | Keeps the `mi_fitness_mcp` namespace for compatibility with existing downstream users. |
-
-The default cloud region is `cn`; another region can be supplied during setup. Available records vary by account region, device, firmware, and Xiaomi's upstream service. A successful sync with zero records can simply mean that the account has no records of that type in the requested range.
-
-## Supported data
-
-- **Daily activity**: steps, distance, active calories, active minutes, and related fields.
-- **Sleep**: sessions and sleep stages.
-- **Workouts**.
-- **Body measurements**: weight and body-composition fields available to the account/device.
-- **Heart-rate samples**, including resting heart rate when available.
-- **SpO2**, stress, and abnormal-heart-beat events when available.
-
-Daily-activity steps are aggregated by local minute. When a phone, band, or watch sends overlapping records for one minute, the bridge retains the larger single record instead of adding them, to avoid double-counting across devices. This is a best-effort compatibility rule for a non-public upstream format; totals can still differ from later server-side corrections shown in the app.
-
-## Project boundary
-
-**The core bridge does not coach.** It deliberately does **not** provide:
-
-- Medical diagnosis, treatment, prescriptions, or weight-loss advice.
-- Hosted accounts, shared credentials, public token proxies, or multi-user cloud services.
-- A hosted or multi-user web dashboard, third-party fitness OAuth/webhooks, or meal-photo analysis.
-
-The optional local coach extension (`.[coach]`, off by default) adds goals, a training profile, and training plans. AI runs only after explicit user configuration and consent; it receives a minimized weekly summary without account IDs, device IDs, GPS, raw samples, or exact timestamps. It provides no medical advice or diet prescriptions and does not change core sync/export/query behavior.
-
-The optional local dashboard/API (`frontend/` and `src/mi_fitness_mcp/web/`) serves the user's own local cache and is not a hosted service.
-
-Downstream projects should install this package or consume its local exports instead of copying the connector source.
-
-## Install
-
-**Requirement:** Python 3.11 or newer.
+### Shortest path (CLI + web dashboard)
 
 ```bash
-git clone https://github.com/shkyyy18/mi_fitness_data_bridge.git
+# 1. Install from the repository root
+python -m venv .venv
+# Windows PowerShell: .\.venv\Scripts\Activate.ps1
+# macOS / Linux:      source .venv/bin/activate
+pip install -e '.[web]'
+
+# 2. Configure the account and run the first sync
+mi-fitness-bridge setup
+mi-fitness-bridge doctor
+mi-fitness-bridge sync --start-date 2026-07-01 --end-date 2026-07-15
+
+# 3. Start the local API (keep it running)
+mi-fitness-bridge web --host 127.0.0.1 --port 8765
+
+# 4. In another terminal, start the frontend
+cd frontend
+corepack enable        # first time pnpm is used
+pnpm install
+cp .env.example .env.local
+pnpm dev               # http://127.0.0.1:5173
+```
+
+`.env.example` already points at `http://127.0.0.1:8765/api`. Restart `pnpm dev` after changing `.env.local`, otherwise the app keeps using synthetic demo data.
+
+## Deploy from scratch
+
+### 1. Requirements
+
+- Python **3.11+**
+- Git
+- Web dashboard only: Node.js **20.19+** (or 22.12+) and pnpm (recommended: `corepack enable`)
+
+### 2. Install
+
+```bash
+git clone https://github.com/7Z-F-T/mi_fitness_data_bridge.git
 cd mi_fitness_data_bridge
 python -m venv .venv
 ```
@@ -77,98 +73,114 @@ Windows PowerShell:
 pip install -e .
 ```
 
-macOS/Linux:
+macOS / Linux:
 
 ```bash
 source .venv/bin/activate
 pip install -e .
 ```
 
-For development dependencies:
+Choose extras as needed:
 
 ```bash
-pip install -e '.[dev]'
+pip install -e '.[web]'          # local API (FastAPI + uvicorn)
+pip install -e '.[coach]'        # coach; local goals/template plans work without an AI SDK
+pip install -e '.[coach,web]'    # coach + local API
+pip install -e '.[dev]'          # development, tests, builds
 ```
 
-The primary command is `mi-fitness-bridge`. The older `mi-fitness-mcp` command remains a compatibility alias.
+The primary command is `mi-fitness-bridge`; `mi-fitness-mcp` remains a compatibility alias.
 
-## Configure and diagnose
-
-Use the interactive setup flow. The `passToken` prompt does not echo its value, helping keep it out of shell history:
+### 3. Configure the account (one time)
 
 ```bash
-mi-fitness-bridge setup
-mi-fitness-bridge doctor
+mi-fitness-bridge setup    # interactive user_id, passToken, region (default cn)
+mi-fitness-bridge doctor   # checks config, credentials, database, and cloud connectivity
 ```
 
-Setup asks for a Mi Fitness `user_id`, `passToken`, and region (default: `cn`). Credentials are saved through the local operating-system keyring when available; review the security characteristics of your active keyring backend before use. Do **not** put a `passToken` in a command line, script, issue, log, or screenshot. `setup` does not accept `--user-id` or `--pass-token` command-line flags.
+- `passToken` is read only from the hidden interactive prompt. It is **never accepted as a command-line flag**, and credentials are stored in the OS keyring.
+- The default cloud region is `cn`; this is a routing default, not a device or region compatibility guarantee.
+- A cloud check in `doctor` can fail because of network or upstream changes; local data, exports, and read-only web queries still work offline.
+- Database path precedence: `--db` > `MI_FITNESS_DB_PATH` > configured/default path. `sync`, `export`, `serve`, `doctor`, and `web` accept `--db`.
+- No usable `user_id` / `passToken`, or unsure about device/region support? Read [compatibility and safe first run](docs/compatibility.md) first.
 
-`doctor` checks local configuration, credentials, and the database. When credentials are configured, it also checks cloud connectivity. A cloud check can fail because of network or upstream-service changes; existing local data and export operations remain usable without a cloud connection.
-
-`sync`, `export`, `serve`, and `doctor` accept `--db` and support the `MI_FITNESS_DB_PATH` environment variable. Precedence is: command-line option > environment variable > configured/default path.
-
-## Sync data
-
-Synchronize every supported data type for a date range:
+### 4. First sync and export
 
 ```bash
+# Recommended for the first run: explicit range
 mi-fitness-bridge sync --start-date 2026-07-01 --end-date 2026-07-15
-```
 
-Synchronize one data type:
-
-```bash
+# One data type
 mi-fitness-bridge sync --type sleep --start-date 2026-07-01 --end-date 2026-07-15
-mi-fitness-bridge sync --type body_measurements --start-date 2026-07-01 --end-date 2026-07-15
+
+# Later: omit dates for incremental sync from the recorded watermark
+# (the default lookback applies when no watermark exists)
+mi-fitness-bridge sync
+
+# Ignore the watermark; still bounded by explicit dates or the default lookback
+mi-fitness-bridge sync --full
 ```
 
-`--type` accepts: `daily_activity`, `heart_rate`, `body_measurements`, `sleep`, `workouts`, `spo2`, `stress`, and `abnormal_heart_beat`. The CLI reports added, updated, partial, and failed results by data type. Re-running an explicit date range is idempotent and does not duplicate stored records. If Xiaomi later corrects earlier history, re-run that earlier range with an explicit `--start-date`.
+`--type` accepts `daily_activity`, `heart_rate`, `body_measurements`, `sleep`, `workouts`, `workout_detail`, `spo2`, `stress`, and `abnormal_heart_beat`. Re-running the same range is idempotent and does not duplicate records.
 
-### Missing sleep scores (issue #14)
+**After upgrading the code:** re-sync affected data types before exporting, then restart any running MCP and web API processes. Initialization adds new columns automatically; **do not delete the database**. Sleep-score details are in [compatibility](docs/compatibility.md).
 
-Sleep sync now prefers valid scores on raw records. If main sleep has no score, it also tries **this account's daily aggregate sleep reports**. Matching uses local wake date, source and segment boundaries when available. Only an unambiguous main sleep receives the daily score; it is never copied to naps/other devices or locally estimated.
-
-- `sleep_score_source` is `sleep_record` or `daily_report`; unknown provenance in older caches is `null`. A daily score is not a separate score calculated for each sleep segment.
-- **Still unofficial and experimental.** This change is covered by synthetic data and HTTP mocks, not live device/region verification. `KNOWN_REGIONS` lists routing candidates, not verified sleep-score support.
-- Unavailable reports, missing scores or ambiguous matches emit a warning without discarding base sleep records. Without a previously available score the value remains `null`. Upstream zero defaults still mean unavailable, not a zero score. Re-sync preserves the last known score for exactly the same boundaries and nap flag, so it may not be fresh from the current sync.
-- **After installing code containing this fix, re-sync before exporting and restart existing MCP processes.** Export alone cannot fetch scores. Do not delete the database; initialization adds the provenance column automatically.
+Export:
 
 ```bash
-mi-fitness-bridge sync --type sleep --start-date 2026-09-13 --end-date 2026-09-21
-mi-fitness-bridge export --format json --type sleep --start-date 2026-09-13 --end-date 2026-09-21 --output exports/sleep.json
-```
-
-These are example dates; allow an extra day on each side for cross-midnight sleep. Summaries use local wake dates while exports retain their existing `start_at` filtering; see [export format](docs/export-format.md). If still empty, share only model, account region, installed version, whether the app shows a score, and sync status. Never upload credentials, real health records, databases or logs.
-
-## Export local data
-
-Export one portable JSON file:
-
-```bash
+# One JSON file
 mi-fitness-bridge export --format json --output exports/mi_fitness.json
-```
 
-Export CSV files (one per dataset):
-
-```bash
+# One CSV per dataset
 mi-fitness-bridge export --format csv --output exports/csv
-```
 
-Filter an export by dataset and date:
-
-```bash
+# Dataset and date filters
 mi-fitness-bridge export --format json --type sleep \
   --start-date 2026-07-01 --end-date 2026-07-15 \
   --output exports/sleep.json
 ```
 
-Dates must use `YYYY-MM-DD`, and the start date cannot be later than the end date. JSON is UTF-8; CSV is `utf-8-sig` (with BOM), so Excel can open Chinese text correctly. Exported health records are sensitive personal data and can contain a plaintext `user_id`. The default `.gitignore` excludes databases, export directories, and common logs, but you remain responsible for storing, sharing, and backing up those files safely.
+Dates use `YYYY-MM-DD`, and the start must not be later than the end. JSON is UTF-8; CSV is `utf-8-sig` (BOM) so Excel opens Chinese correctly. Exports **never contain `passToken`**, but can contain a plaintext `user_id` and full health records; keep them private. See [export format](docs/export-format.md) for fields and filtering rules.
 
-See the [export-format reference](docs/export-format.md) for the JSON envelope, CSV layout, and inclusive date-filtering rules.
+Validate the local pipeline without an account:
 
-## MCP server
+```bash
+python examples/synthetic_demo.py
+python examples/coach_synthetic_demo.py
+```
 
-Start the local stdio MCP server:
+### 5. Local web dashboard (optional)
+
+Backend:
+
+```bash
+pip install -e '.[web]'
+mi-fitness-bridge web --host 127.0.0.1 --port 8765
+
+# Health check
+curl http://127.0.0.1:8765/api/health
+
+# Swagger UI: http://127.0.0.1:8765/docs
+# OpenAPI:    http://127.0.0.1:8765/openapi.json
+```
+
+Frontend:
+
+```bash
+cd frontend
+corepack enable
+pnpm install
+cp .env.example .env.local
+pnpm dev        # http://127.0.0.1:5173
+pnpm build      # type-check + production build
+```
+
+- Query endpoints are read-only (SQLite `mode=ro`); `POST /api/sync` uses keyring credentials, writes the local cache, and requires `X-Mi-Fitness-Confirm: sync`.
+- Optional coach writes require `X-Mi-Fitness-Confirm: coach`; AI calls also require separate consent.
+- The API **never accepts credentials over HTTP** and binds to `127.0.0.1` by default. Do not expose it publicly.
+- API contracts, error envelopes, status codes, account selection, and sync history: [local web API](docs/web-api.md). Frontend contract: [frontend/README.md](frontend/README.md).
+
+### 6. Local MCP server (optional)
 
 ```bash
 mi-fitness-bridge serve
@@ -176,13 +188,7 @@ mi-fitness-bridge serve
 mi-fitness-mcp serve
 ```
 
-Available tools are `get_connection_status`, `sync_data`, `get_sync_status`, `cancel_sync`, `query_sync_history`, `get_profile`, `query_daily_activity`, `query_metric_series`, `get_data_coverage`, `query_body_measurements`, `query_sleep`, `query_workouts`, `query_workout_series`, `workout_detail_series`, `query_heart_rate`, `query_spo2`, `query_stress`, `query_abnormal_heart_beat`, plus the optional coach tools `coach_get_overview`, `coach_recommend_goals`, `coach_save_goal`, `coach_get_plan`, and `coach_generate_plan`. The legacy names `get_daily_summary` and `workout_series` remain callable for compatibility but are not advertised in the tool catalog.
-
-Record-list queries support `limit`/`offset` pagination; `data.pagination.next_offset` indicates the next page. Keep filters unchanged and do not sync between pages. Use `query_workout_series` with `max_points` for a single workout curve instead of list pagination. Background MCP syncs can be stopped with `cancel_sync`; already committed records are preserved. Job statuses are stored in local SQLite and remain accessible after restarting through `get_sync_status` or `query_sync_history`. The journal keeps the latest 500 terminal MCP jobs plus active jobs, excludes CLI syncs, and marks unfinished jobs as `interrupted` on restart rather than automatically resuming them. Only one MCP server may use a given database at a time.
-
-The server communicates over standard input/output and is intended to be launched and managed by a local MCP client. When run directly in a terminal, it appears to "hang" because it is waiting for MCP messages. It does not contact Xiaomi at startup; cloud connections are made only on demand by status or synchronization operations. Do not expose it as a public service or credential proxy.
-
-Example client configuration:
+Example local MCP client configuration:
 
 ```json
 {
@@ -195,11 +201,89 @@ Example client configuration:
 }
 ```
 
+- The server communicates over stdio and is launched by a local MCP client. Running it directly in a terminal appears to "hang" because it is waiting for MCP messages.
+- It does not contact Xiaomi at startup; cloud connections happen only on demand for status or sync operations.
+- Only one MCP server may use a given database at a time.
+- Tool contracts, pagination, errors, and side effects: [MCP tool contracts](docs/mcp-tool-contracts.md). Per-second workout detail and GPS: [workout detail feasibility](docs/workout-detail-feasibility.md).
 
-Per-second workout curves are available through `workout_detail_series` after syncing `workout_detail`. Supported metrics are heart rate, cadence, pace and speed when the device reports them; GPS tracks can be exported via `workout_gps`. The default full sync backfills cached workouts without detail, and `force_full_sync` re-fetches covered workouts. The unofficial FDS protocol remains device- and firmware-dependent; see [workout detail feasibility](docs/workout-detail-feasibility.md).
+### 7. Optional coach (goals and training plans)
 
+```bash
+mi-fitness-bridge coach status                     # initialize/check local coach tables
+mi-fitness-bridge coach profile --weeks 12 --json
+mi-fitness-bridge coach recommend                  # local rule-based suggestions
+mi-fitness-bridge coach goals add --type weekly_frequency \
+  --title 'Train 3x per week' --target 3 --unit sessions_per_week --start-date 2026-01-01
+mi-fitness-bridge coach plan --goal <goal_id> --generate --fallback --activate
 
-## Use as a Python dependency
+# Optional: configure a remote LLM (interactive; the key goes only to the OS keyring)
+mi-fitness-bridge coach setup
+```
+
+Local goals, profiles, and deterministic template plans work without an LLM. Remote AI runs only after explicit configuration, recorded consent, and an explicit user action, and receives only a minimized weekly summary. API keys never enter `config.json`, CLI arguments, MCP arguments, or HTTP. See [coach](docs/coach.md).
+
+## Command and documentation map
+
+| Task | Command | Documentation |
+| --- | --- | --- |
+| Configure account | `mi-fitness-bridge setup` | [Compatibility](docs/compatibility.md) |
+| Diagnose config/database/connectivity | `mi-fitness-bridge doctor` | [Compatibility](docs/compatibility.md) |
+| Incremental sync (no dates) | `mi-fitness-bridge sync` | [Sync section](#4-first-sync-and-export) |
+| Sync a type/date range | `mi-fitness-bridge sync --type ... --start-date ... --end-date ...` | [Sync section](#4-first-sync-and-export) |
+| Full re-sync ignoring the watermark | `mi-fitness-bridge sync --full` | [Sync section](#4-first-sync-and-export) |
+| JSON/CSV export | `mi-fitness-bridge export ...` | [Export format](docs/export-format.md) |
+| Local MCP | `mi-fitness-bridge serve` | [MCP tool contracts](docs/mcp-tool-contracts.md) |
+| Local web API | `mi-fitness-bridge web --host 127.0.0.1 --port 8765` | [Web API](docs/web-api.md) |
+| Frontend dev/build | `cd frontend && pnpm dev` / `pnpm build` | [frontend/README.md](frontend/README.md) |
+| Coach goals/plans | `mi-fitness-bridge coach ...` | [Coach](docs/coach.md) |
+| Offline validation | `python examples/synthetic_demo.py` | [Compatibility](docs/compatibility.md) |
+| Tests and lint | `python -m pytest -q -p no:cacheprovider` / `python -m ruff check src tests scripts` | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Release | Follow the checklist | [Release checklist](docs/release-checklist.md) |
+
+## Documentation map
+
+| Document | Contents |
+| --- | --- |
+| [docs/README.md](docs/README.md) | Full documentation index: current guides, design references, maintenance, history |
+| [docs/compatibility.md](docs/compatibility.md) | Compatibility evidence, credential prerequisites, safe first run, reporting |
+| [docs/web-api.md](docs/web-api.md) | Local API endpoints, error envelope, account selection, sync history |
+| [docs/coach.md](docs/coach.md) | Goals, training profile, plans, AI data boundary |
+| [docs/export-format.md](docs/export-format.md) | JSON/CSV layouts, date filtering, field semantics |
+| [docs/mcp-tool-contracts.md](docs/mcp-tool-contracts.md) | MCP tool contracts and pagination semantics |
+| [docs/workout-detail-feasibility.md](docs/workout-detail-feasibility.md) | FDS per-second detail protocol, support, limits |
+| [docs/设计手稿.md](docs/设计手稿.md) | Frontend page design |
+| [docs/release-checklist.md](docs/release-checklist.md) | Release and real-account pilot gates |
+| [SECURITY.md](SECURITY.md) | Sensitive data, vulnerability reporting, LLM egress |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contributions, tests, licensing |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
+| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Fork lineage, upstream license history, and third-party attribution |
+
+## Supported data
+
+Daily activity, sleep sessions and stages, workouts, body measurements, heart-rate samples (including resting heart rate when available), SpO2, stress, abnormal-heart-beat events, and per-second workout detail plus GPS tracks when the device reports them.
+
+Daily-activity steps are aggregated by local minute. When a phone, band, or watch sends overlapping records for one minute, the bridge keeps the larger single record instead of adding them, to avoid double-counting across devices. This is a best-effort compatibility rule for a non-public upstream format; totals can still differ from later server-side corrections in the app.
+
+## Fork statement and disclaimer
+
+- **Provenance:** This repository (`7Z-F-T/mi_fitness_data_bridge`) is a fork of [`shkyyy18/mi_fitness_data_bridge`](https://github.com/shkyyy18/mi_fitness_data_bridge). The upstream project was extracted from [`binglua/mi-fitness-mcp-cn`](https://github.com/binglua/mi-fitness-mcp-cn), which is based on [`kubulashvili/mi-fitness-mcp`](https://github.com/kubulashvili/mi-fitness-mcp).
+- **Not an official release:** This fork is not the upstream project's official release. The upstream authors are not responsible for this fork's changes, releases, support, or data behavior, and the fork maintainer does not represent Xiaomi.
+- **Changes in this fork:** Local web dashboard and API, per-dataset sync history and incremental sync, optional coach, FDS per-second workout-detail parsing fixes, and documentation/frontend updates.
+- **Disclaimer:** This is a personal, unofficial, experimental project provided **"AS IS"**, without warranties of any kind, express or implied, including but not limited to merchantability, fitness for a particular purpose, and non-infringement. It may fail because of upstream API changes, device or region differences, account permissions, or data errors. You are responsible for backing up your data, checking results, and accepting the risks of use. It is not medical advice and must not be used for diagnosis or treatment. Follow Xiaomi's terms of service, applicable law, and the authorization scope of your account.
+- **License:** This fork is released under **AGPL-3.0-only**. Upstream copyrights, original MIT notices, license history, and third-party attribution are in [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Project boundary and privacy
+
+- **The core bridge provides no coaching or medical advice** — no diagnosis, treatment, prescriptions, or weight-loss advice.
+- No hosted accounts, shared credentials, public token proxies, public services, multi-user dashboards, telemetry, or third-party analytics.
+- The optional coach extension is off by default. It adds local goals, a training profile, and training plans without changing core sync/export/query behavior.
+- The optional local web dashboard and API serve only the user's own local cache; they are not hosted services.
+- Health data returned by MCP tools flows through the MCP client/model you use. Run the server only through a local stdio client; never expose it through a remote or hosted proxy.
+- Downstream projects should install this package or consume local exports instead of copying the connector source.
+
+This software is for personal data access and engineering research, not diagnosis or treatment. See [SECURITY.md](SECURITY.md) for security reporting and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution and test rules.
+
+## Python integration
 
 The compatibility package name remains `mi_fitness_mcp`:
 
@@ -207,67 +291,10 @@ The compatibility package name remains `mi_fitness_mcp`:
 from mi_fitness_mcp.adapters.mi_fitness_cloud import MiFitnessCloudAdapter
 ```
 
-Never hard-code real credentials or commit them to source control. Downstream projects should install this package rather than vendor or copy its connector source.
+Never hard-code or commit real credentials. Downstream projects should install this package rather than vendor or copy its connector source.
 
-## Synthetic end-to-end demo
+## License and feedback
 
-The repository includes a demo that uses no network access or real account:
+This fork is released under **AGPL-3.0-only**. See [LICENSE](LICENSE). Upstream provenance, original MIT notices, upstream license history, and third-party attribution are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-```bash
-python examples/synthetic_demo.py
-python examples/coach_synthetic_demo.py
-```
-
-The first script creates a temporary SQLite database with synthetic records and runs the real JSON/CSV export pipeline. The second seeds eight synthetic training weeks, builds a profile, creates a local goal, and generates/validates a template plan. Neither uses the network, a real account, the keyring, or an LLM. Use them to verify local paths or prepare privacy-safe bug reports.
-
-## Development
-
-```bash
-pip install -e '.[dev]'
-python -m pytest -q -p no:cacheprovider
-python -m ruff check src tests
-```
-
-Use synthetic data only in issues, tests, documentation, and screenshots. Follow [SECURITY.md](SECURITY.md) for security reporting; see [docs/release-checklist.md](docs/release-checklist.md) for release steps.
-
-## Local web dashboard and API (optional)
-
-`frontend/` is a separate Vue 3 + TypeScript dashboard (pnpm-managed) with home, workout summary, and goals pages. It uses synthetic demo data by default.
-
-The bridge also ships a local FastAPI service for the dashboard:
-
-```bash
-pip install -e '.[web]'
-mi-fitness-bridge web --host 127.0.0.1 --port 8765
-```
-
-Query endpoints are read-only; the explicit `POST /api/sync` action uses credentials already stored in the OS keyring and writes the local cache. Optional `POST /api/coach/*` endpoints write only local coach tables and require the `X-Mi-Fitness-Confirm: coach` header; AI calls require separate consent. The API never accepts credentials over HTTP. Sync runs are stored per dataset in `sync_runs` with timestamps, status, counts, source and error code; the dashboard's Sync panel shows them and starts an incremental sync by default. Point the frontend at the API with `VITE_API_BASE_URL=http://127.0.0.1:8765/api`. See [docs/web-api.md](docs/web-api.md), [docs/coach.md](docs/coach.md), and [frontend/README.md](frontend/README.md). Never deploy the dashboard or API publicly: the cache contains plaintext `user_id` and sensitive health records.
-
-### Optional coach (goals and AI training plans)
-
-```bash
-pip install -e '.[coach,web]'
-mi-fitness-bridge coach setup          # interactive provider/model/key/remote consent
-mi-fitness-bridge coach status
-mi-fitness-bridge coach profile --weeks 12 --json
-mi-fitness-bridge coach goals add --type weekly_frequency --title 'Train 3x per week' \
-  --target 3 --unit sessions_per_week --start-date 2026-01-01
-mi-fitness-bridge coach plan --goal <goal_id> --generate --fallback --activate
-```
-
-Local goals, profiles, and deterministic template plans work without an LLM. Run `mi-fitness-bridge coach status` once to initialize the local coach tables. Remote-LLM consent is recorded only by the interactive `coach setup`; the web page shows the exact minimized payload and directs you there. API keys stay in the OS keyring and never enter `config.json`, CLI arguments, MCP arguments, or HTTP. See [docs/coach.md](docs/coach.md).
-
-## Privacy, provenance, and license
-
-- Keep `passToken`s, SQLite databases, exports, and logs private.
-- Do not commit real health data or screenshots that contain personal metrics.
-- Health data returned by `query_*` MCP tools flows through the MCP client you use. Run the server only through a local stdio client, never through a remote or hosted proxy.
-- Optional coach AI calls send only a minimized weekly summary; API keys stay in the OS keyring and remote consent is recorded only by interactive `coach setup`. AI output is not medical advice.
-- This software is for personal data access and engineering research, not diagnosis or treatment.
-- See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for upstream provenance and MIT attribution.
-
-The current version is licensed under **AGPL-3.0-only**; versions published before 2026-08-03 were MIT. See [LICENSE](LICENSE).
-
-## Help others find the project
-
-If this solves a problem for you, consider a **Star**. [Privacy-safe compatibility feedback](https://github.com/shkyyy18/mi_fitness_data_bridge/issues/new?template=compatibility_report.yml), clearer setup instructions and synthetic reproductions are especially welcome. Never upload credentials or real health records.
+If this solves a problem for you, consider a **Star** on [this fork](https://github.com/7Z-F-T/mi_fitness_data_bridge) or a [privacy-safe compatibility report](https://github.com/7Z-F-T/mi_fitness_data_bridge/issues/new?template=compatibility_report.yml). Never upload credentials, real health data, databases, or logs.

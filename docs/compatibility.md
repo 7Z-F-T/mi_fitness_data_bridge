@@ -4,7 +4,7 @@
 
 ## Try without an account / 不连接账户也能先试
 
-- [Open the synthetic browser demo / 浏览器合成数据演示](https://shkyyy18.github.io/mi_fitness_data_bridge/).
+- [Open the upstream project's synthetic browser demo / 上游项目的浏览器合成数据演示](https://shkyyy18.github.io/mi_fitness_data_bridge/).
 - After installing the package, run `python examples/synthetic_demo.py`.
 - Both use invented records to demonstrate local SQLite → JSON/CSV export. Neither proves that a device, region or account can synchronize from Xiaomi.
 - The web page is a static sample, **not a hosted bridge**, health dashboard or account connection service. It accepts no credentials, personal records or file uploads.
@@ -31,7 +31,7 @@ If you already have authorized credentials, use interactive `mi-fitness-bridge s
 
 ## Report compatibility without exposing data / 安全反馈兼容性
 
-[Use the compatibility report form / 使用兼容性反馈表](https://github.com/shkyyy18/mi_fitness_data_bridge/issues/new?template=compatibility_report.yml).
+[Use the compatibility report form / 使用兼容性反馈表](https://github.com/7Z-F-T/mi_fitness_data_bridge/issues/new?template=compatibility_report.yml).
 
 Only share:
 - Device **model**, not serial number or device/account ID.
@@ -47,6 +47,6 @@ Local storage and local stdio do not guarantee that an AI client/model runs offl
 
 ## Sleep-score fallback / 睡眠评分补取（2026-09-21）
 
-The unreleased #14 patch adds a best-effort own-account daily-report lookup using the existing region and authentication, with no relatives API or cross-region discovery. It is covered by encrypted respx mocks, including cn/de/us routing; this is **not** live-account, device or region verification. `KNOWN_REGIONS` remains a list of routing candidates only. Missing/ambiguous scores remain unavailable, and an optional report failure must not discard sleep sessions. See the README sleep-score section before re-syncing.
+The #14 sleep-score patch adds a best-effort own-account daily-report lookup using the existing region and authentication, with no relatives API or cross-region discovery. It is covered by encrypted respx mocks, including cn/de/us routing; this is **not** live-account, device or region verification. `KNOWN_REGIONS` remains a list of routing candidates only. Missing/ambiguous scores remain unavailable, and an optional report failure must not discard sleep sessions. Re-sync after upgrading; export alone cannot fetch scores.
 
-尚未发布的 #14 补丁使用既有地区及认证尝试读取本人每日聚合睡眠报告，不接亲友接口，不跨地区探测。cn/de/us 的测试只证明模拟请求路由正确，**不代表真实设备、账户或地区已经验证可用**。如接口不支持或无法明确匹配，保留原睡眠记录，不伪造评分。升级后须重新同步；只导出不会补取。
+#14 睡眠评分补丁使用既有地区及认证尝试读取本人每日聚合睡眠报告，不接亲友接口，不跨地区探测。cn/de/us 的测试只证明模拟请求路由正确，**不代表真实设备、账户或地区已经验证可用**。如接口不支持或无法明确匹配，保留原睡眠记录，不伪造评分。升级后须重新同步；只导出不会补取。

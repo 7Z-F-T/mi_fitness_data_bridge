@@ -35,10 +35,12 @@ SOFTWARE.
 
 -----------------------------------------------------------------------------
 
-New code in the current version of this project is licensed under the GNU
-Affero General Public License v3.0 only (AGPL-3.0-only).
+This repository is a fork of `shkyyy18/mi_fitness_data_bridge`; the fork and
+its subsequent modifications are licensed under the GNU Affero General Public
+License v3.0 only (AGPL-3.0-only).
 
 Copyright (c) 2026 shkyyy18 and contributors
+Copyright (c) 2026 7Z-F-T and contributors
 
 The full AGPL text follows below.
 

@@ -18,7 +18,7 @@
 pip install -e '.[dev]'
 pip install -e '.[web]'
 python -m pytest -q -p no:cacheprovider
-python -m ruff check src tests
+python -m ruff check src tests scripts
 python examples/coach_synthetic_demo.py
 mi-fitness-bridge web --host 127.0.0.1 --port 8765
 mi-fitness-bridge coach status
@@ -42,7 +42,7 @@ mi-fitness-bridge coach status
 ## 既有工作规则（原文保留）
 
 - Read `PROJECT_GUIDE.md` and `README.md` before work.
-- Use `D:\AIWork\projects\mi_fitness_data_bridge` as the stable path.
+- Work from the repository root; do not assume a machine-specific absolute path.
 - Keep credentials, databases, exports, logs, caches, and personal health data out of Git.
 - Do not duplicate this connector inside downstream projects.
 - Preserve the experimental/unofficial status and upstream MIT attribution.
